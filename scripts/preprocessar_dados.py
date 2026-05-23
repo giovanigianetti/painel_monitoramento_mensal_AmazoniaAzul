@@ -1,162 +1,154 @@
 #!/usr/bin/env python3
-"""
-Pré-processa planilhas dos fundos para publicação pública no dashboard Amazônia Azul.
+# -*- coding: utf-8 -*-
+"""Pré-processamento público do Dashboard Amazônia Azul.
 
-Uso básico:
-  python scripts/preprocessar_dados.py \
-    --base-bruta caminho/FNE_AnexoI_Contratações_032026.xlsx \
-    --tipologia caminho/Tipologia\ Amazônia\ Azul\ \(v5\).xlsx \
-    --saida data/processed/operacoes_agregadas_fne_2026_03.json \
-    --saida-tipologia data/processed/tipologia_amazonia_azul.json \
-    --fundo FNE \
-    --periodo 2026-03
+Uso recomendado:
+  1. Mantenha os arquivos brutos fora do repositório público, em data/raw/ ou /mnt/data.
+  2. Rode: python scripts/preprocessar_dados.py
+  3. Publique apenas data/processed/*.json e os arquivos de código do dashboard.
 
-O script usa apenas bibliotecas padrão do Python para ler XLSX por XML interno.
-Ele não publica a base bruta; gera JSON agregado e compacto.
+O script gera JSON agregado e codificado. Nenhum registro individual da base bruta é
+publicado. Para bases Excel grandes, recomenda-se converter localmente para CSV com
+LibreOffice antes do processamento; se o CSV existir, ele será usado automaticamente.
 """
-from zipfile import ZipFile
-from xml.etree.ElementTree import iterparse, parse
-from pathlib import Path
+from __future__ import annotations
+import csv, json, math, re, subprocess
 from collections import defaultdict
-import argparse, json, re, unicodedata
+from pathlib import Path
+from typing import Any
+from openpyxl import load_workbook
 
-NS='{http://schemas.openxmlformats.org/spreadsheetml/2006/main}'
-R='{http://schemas.openxmlformats.org/officeDocument/2006/relationships}'
-UF_TO_MACRO={'AC':'Norte','AP':'Norte','AM':'Norte','PA':'Norte','RO':'Norte','RR':'Roraima','TO':'Norte','AL':'Nordeste','BA':'Nordeste','CE':'Nordeste','MA':'Nordeste','PB':'Nordeste','PE':'Nordeste','PI':'Nordeste','RN':'Nordeste','SE':'Nordeste','DF':'Centro-Oeste','GO':'Centro-Oeste','MT':'Centro-Oeste','MS':'Centro-Oeste','ES':'Sudeste','MG':'Sudeste','RJ':'Sudeste','SP':'Sudeste','PR':'Sul','RS':'Sul','SC':'Sul'}
-UF_TO_MACRO['RR']='Norte'
+ROOT = Path(__file__).resolve().parents[1]
+RAW_DIR = ROOT / 'data' / 'raw'
+PROCESSED = ROOT / 'data' / 'processed'
+PROCESSED.mkdir(parents=True, exist_ok=True)
 
-def load_shared(z):
-    ss=[]
-    if 'xl/sharedStrings.xml' not in z.namelist(): return ss
-    with z.open('xl/sharedStrings.xml') as f:
-        for _,el in iterparse(f, events=('end',)):
-            if el.tag==NS+'si':
-                ss.append(''.join([(t.text or '') for t in el.iter(NS+'t')]))
-                el.clear()
-    return ss
+FNE_XLSX = Path('/mnt/data/FNE_AnexoI_Contratações_032026.xlsx')
+TIP_XLSX = Path('/mnt/data/Tipologia Amazônia Azul (v5).xlsx')
+LOCAL_CSV = Path('/mnt/data/lo_csv/FNE_AnexoI_Contratações_032026.csv')
 
-def col_idx(ref):
-    letters=''.join([c for c in ref if c.isalpha()]); n=0
-    for ch in letters: n=n*26+ord(ch.upper())-64
-    return n-1
+MACRO={'AC':'Norte','AP':'Norte','AM':'Norte','PA':'Norte','RO':'Norte','RR':'Norte','TO':'Norte','AL':'Nordeste','BA':'Nordeste','CE':'Nordeste','MA':'Nordeste','PB':'Nordeste','PE':'Nordeste','PI':'Nordeste','RN':'Nordeste','SE':'Nordeste','DF':'Centro-Oeste','GO':'Centro-Oeste','MT':'Centro-Oeste','MS':'Centro-Oeste','ES':'Sudeste','MG':'Sudeste','RJ':'Sudeste','SP':'Sudeste','PR':'Sul','RS':'Sul','SC':'Sul'}
+SCHEMA=['fundo','uf','codMun','municipio','macro','tipologiaPndr','tipologiaTerritorial','elegivel','atividadeAzul','pfPj','anoMes','setor','programa','linha','atividade','cnae','porte','finalidade','instituicao','sexo','valor','beneficiarios','contratos','registros']
+CAT_FIELDS=['fundo','uf','municipio','macro','tipologiaPndr','tipologiaTerritorial','atividadeAzul','pfPj','anoMes','setor','programa','linha','atividade','cnae','porte','finalidade','instituicao','sexo']
+CAT_SET=set(CAT_FIELDS)
 
-def sheet_path_by_name(z, sheet_name):
-    wb=parse(z.open('xl/workbook.xml')).getroot(); rels=parse(z.open('xl/_rels/workbook.xml.rels')).getroot()
-    relmap={rel.attrib['Id']: rel.attrib['Target'] for rel in rels}
-    for s in wb.find(NS+'sheets'):
-        if s.attrib.get('name')==sheet_name:
-            target=relmap[s.attrib.get(R+'id')]
-            if target.startswith('/'): target=target[1:]
-            return target if target.startswith('xl/') else 'xl/'+target
-    raise KeyError(f'Aba não encontrada: {sheet_name}')
+REQUIRED=['UF','CÓDIGO DE MUNICÍPIO','NOME DO MUNICÍPIO','TIPOLOGIA MUNICÍPIO','TIPOLOGIA AMAZÔNIA AZUL','PESSOA FISICA JURÍDICA','DATA DA CONTRATAÇÃO','CNAE','SETOR','PROGRAMA','LINHA DE FINANCIAMENTO','ATIVIDADE','PORTE','FINALIDADE DA OPERAÇÃO','QTDE DE BENEFICIÁRIOS','QUANTIDADE DE CONTRATOS','VALOR CONTRATADO','INSTITUIÇÃO OPERADORA','SEXO']
 
-def iter_sheet_dicts(path, sheet_name):
-    with ZipFile(path) as z:
-        sp=sheet_path_by_name(z, sheet_name); ss=load_shared(z); header=None; cur=[]
-        with z.open(sp) as f:
-            for _,el in iterparse(f, events=('end',)):
-                if el.tag==NS+'c':
-                    idx=col_idx(el.attrib.get('r','A'))
-                    while len(cur)<=idx: cur.append('')
-                    t=el.attrib.get('t'); ve=el.find(NS+'v')
-                    if t=='s' and ve is not None: val=ss[int(ve.text)]
-                    elif t=='inlineStr': val=''.join([x.text or '' for x in el.iter(NS+'t')])
-                    elif ve is not None: val=ve.text or ''
-                    else: val=''
-                    cur[idx]=val; el.clear()
-                elif el.tag==NS+'row':
-                    row=cur; cur=[]; el.clear()
-                    if header is None:
-                        header=[str(x).strip() for x in row]; continue
-                    if not any(row): continue
-                    if len(row)<len(header): row += ['']*(len(header)-len(row))
-                    yield {header[i]: row[i] if i<len(row) else '' for i in range(len(header))}
 
-def nonempty(v, default='Não informado'):
-    s=str(v or '').strip(); return s if s else default
+def clean(x: Any, default='Não informado') -> str:
+    if x is None: return default
+    s=str(x).strip()
+    if not s or s.lower() in ('nan','none','null'): return default
+    return re.sub(r'\s+',' ',s)
 
-def parse_num(v):
-    if v is None or v=='': return 0.0
-    s=str(v).strip().replace('\xa0','')
-    if ',' in s and '.' in s: s=s.replace('.','').replace(',','.')
-    elif ',' in s: s=s.replace(',','.')
+def norm_cod(x: Any) -> str:
+    s=clean(x,'')
+    dig=re.sub(r'\D','',s)
+    return dig.zfill(7) if dig else ''
+
+def to_float(x: Any) -> float:
+    if x is None: return 0.0
+    if isinstance(x,(int,float)) and not isinstance(x,bool):
+        return 0.0 if (isinstance(x,float) and math.isnan(x)) else float(x)
+    s=str(x).strip().replace('.','').replace(',','.')
     try: return float(s)
     except Exception: return 0.0
 
-def pad_code(v):
-    s=re.sub(r'\D','',str(v or '').strip()); return s.zfill(7) if s else ''
-
-def norm(v):
-    s=str(v or '').strip().lower()
-    return ''.join(ch for ch in unicodedata.normalize('NFD',s) if unicodedata.category(ch)!='Mn')
-
-def sim_nao(v):
-    n=norm(v)
-    if n in ('sim','s','yes'): return 'Sim'
-    if n in ('nao','n','no'): return 'Não'
-    return 'Não informado'
-
-def sexo(v):
-    n=norm(v)
-    if n in ('f','fem','feminino','mulher','mulheres'): return 'Mulheres'
-    if n in ('m','masc','masculino','homem','homens'): return 'Homens'
-    return 'Não informado / PJ'
-
-def parse_month(v):
-    s=str(v or '').strip(); m=re.match(r'^(\d{1,2})/(\d{4})$',s)
+def to_period(x: Any) -> str:
+    s=clean(x,'')
+    m=re.match(r'^(\d{1,2})[/-](\d{4})$',s)
     if m: return f'{int(m.group(2)):04d}-{int(m.group(1)):02d}'
-    m=re.match(r'^(\d{4})[-/](\d{1,2})',s)
+    m=re.match(r'^(\d{4})[/-](\d{1,2})',s)
     if m: return f'{int(m.group(1)):04d}-{int(m.group(2)):02d}'
-    return ''
+    return 'Sem data'
 
-def taxa_bin(tx):
-    if tx <= 0: return 'Não informado'
-    if tx < 4: return 'Até 4% a.a.'
-    if tx < 6: return '4% a 6% a.a.'
-    if tx < 8: return '6% a 8% a.a.'
-    if tx < 10: return '8% a 10% a.a.'
-    return '10% a.a. ou mais'
+def norm_sexo(x: Any) -> str:
+    s=clean(x).upper()
+    if s in ('F','FEMININO','MULHER','MULHERES'): return 'Mulheres'
+    if s in ('M','MASCULINO','HOMEM','HOMENS'): return 'Homens'
+    return 'Não informado / PJ / não aplicável'
 
-def load_tipologia(path):
-    terr={}; counts=defaultdict(int)
-    for r in iter_sheet_dicts(path,'Base de dados'):
-        code=pad_code(r.get('Código de município'))
-        if not code: continue
-        tip=nonempty(r.get('Tipologia Amazônia Azul')); uf=nonempty(r.get('UF'))
-        terr[code]={'codMun':code,'municipioTipologia':nonempty(r.get('Nome de município')),'ufTipologia':uf,'macroTipologia':UF_TO_MACRO.get(uf,nonempty(r.get('Macrorregião'))),'tipologiaTerritorial':tip}
-        counts[tip]+=1
-    return terr, dict(counts)
+def norm_azul(x: Any) -> str:
+    return 'Sim' if clean(x).lower() in ('sim','s','1','true','verdadeiro') else 'Não'
+
+def read_tipologia(path: Path):
+    wb=load_workbook(path,read_only=True,data_only=True)
+    ws=wb['Base de dados']
+    header=next(ws.iter_rows(min_row=1,max_row=1,values_only=True))
+    idx={h:i for i,h in enumerate(header)}
+    out={}
+    for r in ws.iter_rows(min_row=2,values_only=True):
+        cod=norm_cod(r[idx['Código de município']])
+        if cod:
+            out[cod]={'municipio':clean(r[idx['Nome de município']]), 'uf':clean(r[idx['UF']]), 'tipologia':clean(r[idx['Tipologia Amazônia Azul']])}
+    return out
+
+def ensure_csv():
+    if LOCAL_CSV.exists(): return LOCAL_CSV
+    csv_path=RAW_DIR/'FNE_AnexoI_Contratações_032026.csv'
+    if csv_path.exists(): return csv_path
+    xlsx=RAW_DIR/'FNE_AnexoI_Contratações_032026.xlsx'
+    if not xlsx.exists() and FNE_XLSX.exists(): xlsx=FNE_XLSX
+    if not xlsx.exists(): raise FileNotFoundError('Não encontrei o Excel bruto em data/raw/ nem em /mnt/data.')
+    outdir=RAW_DIR/'_csv_convertido'; outdir.mkdir(parents=True,exist_ok=True)
+    subprocess.run(['libreoffice','--headless','--convert-to','csv','--outdir',str(outdir),str(xlsx)], check=True)
+    conv=outdir/(xlsx.stem+'.csv')
+    if not conv.exists(): raise FileNotFoundError('Falha na conversão do Excel para CSV.')
+    return conv
+
+def encode(agg):
+    lookups={f:[] for f in CAT_FIELDS}; idx={f:{} for f in CAT_FIELDS}
+    def enc(f,v):
+        v=clean(v)
+        d=idx[f]
+        if v not in d:
+            d[v]=len(lookups[f]); lookups[f].append(v)
+        return d[v]
+    rows=[]
+    for key, vals in agg.items():
+        rec=list(key)+vals
+        out=[]
+        for name, v in zip(SCHEMA, rec):
+            if name in CAT_SET: out.append(enc(name,v))
+            elif name=='codMun': out.append(str(v))
+            elif name in ('elegivel','registros'): out.append(int(v))
+            else: out.append(round(float(v),2))
+        rows.append(out)
+    return {'schema':SCHEMA,'cat_fields':CAT_FIELDS,'lookups':lookups,'rows':rows}
 
 def main():
-    ap=argparse.ArgumentParser()
-    ap.add_argument('--base-bruta', required=True)
-    ap.add_argument('--tipologia', required=True)
-    ap.add_argument('--saida', required=True)
-    ap.add_argument('--saida-tipologia', required=True)
-    ap.add_argument('--fundo', required=True)
-    ap.add_argument('--periodo', required=True)
-    args=ap.parse_args()
-    terr, terr_counts=load_tipologia(args.tipologia)
-    key_fields=['fundo','uf','codMun','municipio','macro','tipologiaPndr','tipologiaTerritorial','faixaFronteira','semiarido','pfPj','anoMes','ano','mes','cnae','setor','programa','linha','atividade','porte','finalidade','risco','taxaJurosFaixa','estagio','carteira','instituicao','sexo','atividadeAzul']
-    agg={}; raw=elig=no_terr=no_period=0; months=set(); muns=set(); cnaes=set()
-    for r in iter_sheet_dicts(args.base_bruta,'Dados_Anexo-I'):
-        raw+=1; code=pad_code(r.get('CÓDIGO DE MUNICÍPIO')); tr=terr.get(code)
-        if not tr: no_terr+=1; continue
-        per=parse_month(r.get('DATA DA CONTRATAÇÃO'))
-        if not per: no_period+=1; continue
-        uf=nonempty(r.get('UF'))
-        item={'fundo':args.fundo,'uf':uf,'codMun':code,'municipio':nonempty(r.get('NOME DO MUNICÍPIO')),'macro':UF_TO_MACRO.get(uf,tr['macroTipologia']),'tipologiaPndr':nonempty(r.get('TIPOLOGIA MUNICÍPIO')),'tipologiaTerritorial':tr['tipologiaTerritorial'],'faixaFronteira':nonempty(r.get('FAIXA DE FRONTEIRA')),'semiarido':nonempty(r.get('SEMIÁRIDO')),'pfPj':nonempty(r.get('PESSOA FISICA JURÍDICA')),'anoMes':per,'ano':int(per[:4]),'mes':int(per[5:7]),'cnae':nonempty(r.get('CNAE')),'setor':nonempty(r.get('SETOR')),'programa':nonempty(r.get('PROGRAMA')),'linha':nonempty(r.get('LINHA DE FINANCIAMENTO')),'atividade':nonempty(r.get('ATIVIDADE')),'porte':nonempty(r.get('PORTE')),'finalidade':nonempty(r.get('FINALIDADE DA OPERAÇÃO')),'risco':nonempty(r.get('RISCO DA OPERAÇÃO')),'taxaJurosFaixa':taxa_bin(parse_num(r.get('TAXA DE JUROS'))),'estagio':nonempty(r.get('ESTÁGIO')),'carteira':nonempty(r.get('CARTEIRA')),'instituicao':nonempty(r.get('INSTITUIÇÃO OPERADORA')),'sexo':sexo(r.get('SEXO')),'atividadeAzul':sim_nao(r.get('TIPOLOGIA AMAZÔNIA AZUL'))}
-        key=tuple(item[f] for f in key_fields)
-        if key not in agg: agg[key]={**item,'valor':0.0,'beneficiarios':0.0,'contratos':0.0,'registrosAgregados':0}
-        a=agg[key]; a['valor']+=parse_num(r.get('VALOR CONTRATADO')); a['beneficiarios']+=parse_num(r.get('QTDE DE BENEFICIÁRIOS')); a['contratos']+=parse_num(r.get('QUANTIDADE DE CONTRATOS')); a['registrosAgregados']+=1
-        elig+=1; months.add(per); muns.add(code); cnaes.add(item['cnae'])
-    schema=key_fields+['valor','beneficiarios','contratos','registrosAgregados']
-    compact=[]
-    for r in agg.values():
-        compact.append([round(float(r[f]),2) if f=='valor' else int(round(float(r[f]))) if f in ('beneficiarios','contratos') else r[f] for f in schema])
-    Path(args.saida).parent.mkdir(parents=True, exist_ok=True)
-    json.dump({'schema':schema,'rows':compact,'metadata':{'versao':'agregado-v1','fonteBase':Path(args.base_bruta).name,'fundo':args.fundo,'periodoReferencia':args.periodo,'observacao':'Arquivo agregado e compactado para publicação pública. Não contém a base bruta nem registros individuais.','registrosOriginais':raw,'registrosElegiveis':elig,'registrosForaDaTipologia':no_terr,'registrosSemPeriodo':no_period,'linhasAgregadas':len(compact),'municipiosElegiveisComOperacao':len(muns),'cnaes':len(cnaes),'periodos':sorted(months),'tipologiaMunicipiosElegiveis':terr_counts}}, open(args.saida,'w',encoding='utf-8'), ensure_ascii=False, separators=(',',':'))
-    json.dump({'municipios':list(terr.values()),'metadata':{'fonte':Path(args.tipologia).name,'variaveis':['Código de município','Nome de município','UF','Tipologia Amazônia Azul']}}, open(args.saida_tipologia,'w',encoding='utf-8'), ensure_ascii=False, separators=(',',':'))
-    print(f'OK: {len(compact)} linhas agregadas escritas em {args.saida}')
-
+    tip_path=TIP_XLSX if TIP_XLSX.exists() else RAW_DIR/'Tipologia Amazônia Azul (v5).xlsx'
+    tipologia=read_tipologia(tip_path)
+    csv_path=ensure_csv()
+    key_fields=SCHEMA[:-4]
+    agg=defaultdict(lambda:[0.0,0.0,0.0,0])
+    n=0
+    with open(csv_path, newline='', encoding='utf-8-sig') as f:
+        reader=csv.DictReader(f)
+        missing=[c for c in REQUIRED if c not in reader.fieldnames]
+        if missing: raise RuntimeError(f'Colunas obrigatórias ausentes: {missing}')
+        for r in reader:
+            cod=norm_cod(r['CÓDIGO DE MUNICÍPIO'])
+            uf=clean(r['UF'],'UF não informada')
+            eleg=1 if cod in tipologia else 0
+            ti=tipologia.get(cod,{})
+            rec={
+                'fundo':'FNE','uf':uf,'codMun':cod,'municipio':clean(r['NOME DO MUNICÍPIO'],ti.get('municipio','Não informado')),
+                'macro':MACRO.get(uf,'Não informado'),'tipologiaPndr':clean(r['TIPOLOGIA MUNICÍPIO']),'tipologiaTerritorial':ti.get('tipologia','Não elegível'),
+                'elegivel':eleg,'atividadeAzul':norm_azul(r['TIPOLOGIA AMAZÔNIA AZUL']),'pfPj':clean(r['PESSOA FISICA JURÍDICA']),'anoMes':to_period(r['DATA DA CONTRATAÇÃO']),
+                'setor':clean(r['SETOR']),'programa':clean(r['PROGRAMA']),'linha':clean(r['LINHA DE FINANCIAMENTO']),'atividade':clean(r['ATIVIDADE']),'cnae':clean(r['CNAE']),'porte':clean(r['PORTE']),'finalidade':clean(r['FINALIDADE DA OPERAÇÃO']),'instituicao':clean(r['INSTITUIÇÃO OPERADORA']),'sexo':norm_sexo(r['SEXO'])
+            }
+            key=tuple(rec[k] for k in key_fields)
+            a=agg[key]
+            a[0]+=to_float(r['VALOR CONTRATADO']); a[1]+=to_float(r['QTDE DE BENEFICIÁRIOS']); a[2]+=to_float(r['QUANTIDADE DE CONTRATOS']); a[3]+=1
+            n+=1
+    payload=encode(agg)
+    payload['metadata']={'versao':'publico-agregado-v2-ajustes','fonte_inicial':csv_path.name,'linhas_brutas_processadas':n,'linhas_agregadas_publicas':len(payload['rows']),'municipios_elegiveis_tipologia':len(tipologia),'observacao':'Arquivo público agregado e codificado; a base bruta não é publicada.'}
+    out=PROCESSED/'operacoes_agregadas_publicas.json'
+    out.write_text(json.dumps(payload,ensure_ascii=False,separators=(',',':')),encoding='utf-8')
+    for name in ['series_temporais.json','agregados_territoriais.json','agregados_dimensoes.json','benchmarking.json']:
+        (PROCESSED/name).write_text(json.dumps({'source':'operacoes_agregadas_publicas.json','note':'Cálculo derivado no navegador a partir do arquivo público agregado codificado.'},ensure_ascii=False),encoding='utf-8')
+    tip_json=[{'codMun':k,**v} for k,v in tipologia.items()]
+    (PROCESSED/'tipologia_amazonia_azul.json').write_text(json.dumps(tip_json,ensure_ascii=False,separators=(',',':')),encoding='utf-8')
+    print(f'Processados {n:,} registros; {len(payload["rows"]):,} linhas agregadas; {out.stat().st_size/1024/1024:.2f} MB')
 if __name__=='__main__': main()

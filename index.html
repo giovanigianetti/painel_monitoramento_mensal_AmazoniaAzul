@@ -7,395 +7,94 @@
   <meta name="description" content="Dashboard público de monitoramento mensal da execução de financiamentos nos municípios elegíveis ao Programa Amazônia Azul." />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" />
   <link rel="preconnect" href="https://unpkg.com" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIINfQvlyVsmPhmFQpZqPeZxB6Uo+sAghs=" crossorigin="" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
   <div id="loadingOverlay" class="loading-overlay">
-    <div class="loader-card">
-      <div class="spinner"></div>
-      <h2>Carregando dashboard…</h2>
-      <p>Leitura da base agregada compacta, aplicação da tipologia territorial e preparação dos indicadores.</p>
-      <small id="loadingStep">Inicializando</small>
-    </div>
+    <div class="loader-card"><div class="spinner"></div><h2>Carregando dashboard…</h2><p>Leitura dos dados públicos agregados e preparação dos indicadores.</p><small id="loadingStep">Inicializando</small></div>
   </div>
-
   <header class="topbar">
     <div>
       <p class="eyebrow">Programa Amazônia Azul • Fundos Constitucionais</p>
       <h1>Monitoramento da execução de financiamentos</h1>
-      <p class="subtitle">Painel público para acompanhamento mensal de valores contratados, beneficiários, contratos, participação das atividades Amazônia Azul e participação feminina nos municípios elegíveis ao Programa.</p>
+      <p class="subtitle">Painel público para acompanhamento mensal de valores contratados, beneficiários, contratos, participação das atividades vinculadas à Amazônia Azul e participação feminina.</p>
     </div>
-    <div class="topbar-actions">
-      <button id="btnRefresh" class="btn btn-primary">Recalcular</button>
-      <button id="btnExportSelection" class="btn btn-ghost">Exportar seleção CSV</button>
-    </div>
+    <div class="topbar-actions"><button id="btnRefresh" class="btn btn-primary">Recalcular</button><button id="btnExportSelection" class="btn btn-ghost">Exportar seleção CSV</button></div>
   </header>
-
   <main class="layout">
     <aside class="sidebar" aria-label="Filtros do dashboard">
-      <section class="filter-section">
-        <div class="filter-title-row">
-          <h2>Filtros principais</h2>
-          <button id="clearFilters" class="link-button">Limpar</button>
-        </div>
-        <label>Mês de referência
-          <select id="filterMonth"></select>
-        </label>
-        <label>Janela temporal
-          <select id="filterWindow">
-            <option value="1">Mês</option>
-            <option value="3">Trimestre</option>
-            <option value="6">Semestre</option>
-            <option value="12">Últimos 12 meses</option>
-          </select>
-        </label>
-        <label>Indicador principal
-          <select id="indicatorSelect">
-            <option value="valor">Valor contratado</option>
-            <option value="beneficiarios">Beneficiários</option>
-            <option value="contratos">Contratos</option>
-          </select>
-        </label>
+      <section class="filter-section"><div class="filter-title-row"><h2>Filtros principais</h2><button id="clearFilters" class="link-button">Limpar</button></div>
+        <label>Mês de referência<select id="filterMonth"></select></label>
+        <label>Janela temporal<select id="filterWindow"><option value="1">Mês</option><option value="3">Trimestre</option><option value="6">Semestre</option><option value="12">Últimos 12 meses</option></select></label>
+        <label>Atividade vinculada à Amazônia Azul<select id="filterAtividadeAzul"><option value="__all__">Todas</option><option value="Sim">Sim</option><option value="Não">Não</option></select></label>
+        <label>Indicador principal<select id="indicatorSelect"><option value="valor">Valor contratado</option><option value="beneficiarios">Beneficiários</option><option value="contratos">Contratos</option></select></label>
       </section>
-
-      <section class="filter-section">
-        <h2>Território</h2>
-        <label>Fundo / instrumento
-          <select id="filterFund"><option value="__all__">Todos</option></select>
-        </label>
-        <label>Macrorregião geográfica
-          <select id="filterMacro"><option value="__all__">Todas</option></select>
-        </label>
-        <label>UF
-          <select id="filterUf"><option value="__all__">Todas</option></select>
-        </label>
-        <label>Município
-          <select id="filterMunicipio"><option value="__all__">Todos</option></select>
-        </label>
-        <label>UF em destaque para comparação
-          <select id="highlightUf"><option value="__none__">Nenhuma</option></select>
-        </label>
-        <label>Município em destaque para comparação
-          <select id="highlightMun"><option value="__none__">Nenhum</option></select>
-        </label>
-        <label>Tipologia territorial Amazônia Azul
-          <select id="filterTipologia"><option value="__all__">Todas</option></select>
-        </label>
+      <section class="filter-section"><h2>Território</h2>
+        <label>Fundo / instrumento<select id="filterFund"><option value="__all__">Todos</option></select></label>
+        <label>Macrorregião geográfica<select id="filterMacro"><option value="__all__">Todas</option></select></label>
+        <label>UF<select id="filterUf"><option value="__all__">Todas</option></select></label>
+        <label>Município<select id="filterMunicipio"><option value="__all__">Todos</option></select></label>
+        <label>Tipologia territorial Amazônia Azul<select id="filterTipologia"><option value="__all__">Todas</option></select></label>
       </section>
-
-      <section class="filter-section">
-        <h2>Financiamento</h2>
-        <label>Atividade vinculada à Amazônia Azul
-          <select id="filterAtividadeAzul">
-            <option value="__all__">Todas</option>
-            <option value="Sim">Sim</option>
-            <option value="Não">Não</option>
-          </select>
-        </label>
-        <label>Setor
-          <select id="filterSetor"><option value="__all__">Todos</option></select>
-        </label>
-        <label>Programa
-          <select id="filterPrograma"><option value="__all__">Todos</option></select>
-        </label>
-        <label>Linha de financiamento
-          <select id="filterLinha"><option value="__all__">Todas</option></select>
-        </label>
-        <label>Atividade
-          <select id="filterAtividade"><option value="__all__">Todas</option></select>
-        </label>
-        <label>CNAE
-          <select id="filterCnae"><option value="__all__">Todas</option></select>
-        </label>
-        <label>Porte
-          <select id="filterPorte"><option value="__all__">Todos</option></select>
-        </label>
-        <label>Finalidade da operação
-          <select id="filterFinalidade"><option value="__all__">Todas</option></select>
-        </label>
-        <label>Natureza do contratante
-          <select id="filterPfPj"><option value="__all__">Todas</option></select>
-        </label>
-        <label>Sexo
-          <select id="filterSexo"><option value="__all__">Todos</option></select>
-        </label>
-        <label>Instituição operadora
-          <select id="filterInstituicao"><option value="__all__">Todas</option></select>
-        </label>
-      </section>
-
-      <section class="filter-section">
-        <h2>Faixas</h2>
-        <label>Faixa de valor agregado
-          <select id="filterValorFaixa">
-            <option value="__all__">Todas</option>
-            <option value="0:10000">Até R$ 10 mil</option>
-            <option value="10000:50000">R$ 10 mil–50 mil</option>
-            <option value="50000:100000">R$ 50 mil–100 mil</option>
-            <option value="100000:500000">R$ 100 mil–500 mil</option>
-            <option value="500000:Infinity">Acima de R$ 500 mil</option>
-          </select>
-        </label>
-        <label>Faixa de taxa de juros
-          <select id="filterJurosFaixa"><option value="__all__">Todas</option></select>
-        </label>
+      <section class="filter-section"><h2>Financiamento</h2>
+        <label>Setor<select id="filterSetor"><option value="__all__">Todos</option></select></label>
+        <label>Programa<select id="filterPrograma"><option value="__all__">Todos</option></select></label>
+        <label>Linha de financiamento<select id="filterLinha"><option value="__all__">Todas</option></select></label>
+        <label>Atividade<select id="filterAtividade"><option value="__all__">Todas</option></select></label>
+        <label>CNAE<select id="filterCnae"><option value="__all__">Todas</option></select></label>
+        <label>Porte<select id="filterPorte"><option value="__all__">Todos</option></select></label>
+        <label>Finalidade da operação<select id="filterFinalidade"><option value="__all__">Todas</option></select></label>
+        <label>Natureza do contratante<select id="filterPfPj"><option value="__all__">Todas</option></select></label>
+        <label>Sexo<select id="filterSexo"><option value="__all__">Todos</option></select></label>
+        <label>Instituição operadora<select id="filterInstituicao"><option value="__all__">Todas</option></select></label>
       </section>
     </aside>
-
     <section class="content">
       <nav class="tabs" role="tablist" aria-label="Páginas do dashboard">
         <button class="tab-button active" data-tab="overview">Visão geral</button>
-        <button class="tab-button" data-tab="rankings">Rankings</button>
-        <button class="tab-button" data-tab="scatter">Dispersão</button>
+        <button class="tab-button" data-tab="detailed">Visão detalhada</button>
+        <button class="tab-button" data-tab="keyindicators">Indicadores chave</button>
         <button class="tab-button" data-tab="maps">Mapas</button>
         <button class="tab-button" data-tab="table">Tabela analítica</button>
         <button class="tab-button" data-tab="methodology">Metodologia</button>
       </nav>
-
       <section id="alerts" class="alerts" aria-live="polite"></section>
-
       <section id="overview" class="tab-panel active">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Visão geral</p>
-            <h2>Execução nos municípios elegíveis</h2>
-          </div>
-          <span id="selectionPill" class="pill">Seleção atual</span>
-        </div>
+        <div class="section-heading"><div><p class="eyebrow">Visão geral</p><h2>Execução nos municípios elegíveis</h2></div><span id="selectionPill" class="pill">Seleção atual</span></div>
         <div id="cards" class="cards-grid"></div>
-        <div class="grid two-cols">
-          <article class="panel">
-            <div class="panel-header">
-              <h3>Evolução temporal</h3>
-              <p>Indicadores mensais após aplicação dos filtros não temporais.</p>
-            </div>
-            <div id="overviewTrend" class="chart"></div>
-          </article>
-          <article class="panel">
-            <div class="panel-header">
-              <h3>Comparação territorial</h3>
-              <p>Brasil, macrorregiões e destaques de UF ou município.</p>
-            </div>
-            <div id="comparisonChart" class="chart"></div>
-          </article>
-        </div>
-        <div class="grid two-cols">
-          <article class="panel">
-            <div class="panel-header">
-              <h3>Composição da seleção</h3>
-              <p>Participação por atividade Amazônia Azul e por sexo informado.</p>
-            </div>
-            <div id="compositionChart" class="chart small-chart"></div>
-          </article>
-          <article class="panel narrative">
-            <div class="panel-header">
-              <h3>Leitura da seleção atual</h3>
-              <p>Síntese automática para uso público.</p>
-            </div>
-            <p id="autoNarrative">Carregando síntese…</p>
-            <div id="windowSummary" class="mini-stats"></div>
-          </article>
-        </div>
+        <article class="panel narrative"><div class="panel-header"><h3>Leitura da seleção atual</h3><p>Síntese automática para uso público.</p></div><p id="autoNarrative">Carregando síntese…</p></article>
+        <article class="panel"><div class="panel-header"><h3>Evolução temporal</h3><p>Três indicadores mensais para os filtros aplicados.</p><label>Modo<select id="trendMode"><option value="abs">Valores absolutos</option><option value="share">% da janela temporal</option></select></label></div><div class="grid three-cols"><div id="trendValor" class="chart"></div><div id="trendBeneficiarios" class="chart"></div><div id="trendContratos" class="chart"></div></div></article>
+        <article class="panel"><div class="panel-header"><h3>Comparação territorial</h3><p>Brasil, macrorregiões e território selecionado, sem suprimir a base comparativa.</p><label>Modo<select id="territoryMode"><option value="abs">Valores absolutos</option><option value="share">% da janela temporal</option></select></label></div><div class="grid three-cols"><div id="territoryValor" class="chart"></div><div id="territoryBeneficiarios" class="chart"></div><div id="territoryContratos" class="chart"></div></div></article>
+        <article class="panel"><div class="panel-header"><h3>Participação dos municípios elegíveis no total</h3><p>Compara municípios elegíveis e atividades da Amazônia Azul com o total geral da base.</p></div><div id="eligibleTotalCards" class="cards-grid compact"></div><div id="eligibleTotalChart" class="chart small-chart"></div></article>
       </section>
-
-      <section id="rankings" class="tab-panel">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Rankings</p>
-            <h2>Concentração setorial e territorial</h2>
-          </div>
-          <div class="inline-controls">
-            <label>Top N
-              <select id="topNSelect">
-                <option value="10">Top 10</option>
-                <option value="20" selected>Top 20</option>
-                <option value="50">Top 50</option>
-                <option value="99999">Todos</option>
-              </select>
-            </label>
-            <label>Dimensão do ranking
-              <select id="rankingDimension">
-                <option value="setor">Setor</option>
-                <option value="programa">Programa</option>
-                <option value="linha">Linha de financiamento</option>
-                <option value="atividade">Atividade</option>
-                <option value="cnae">CNAE</option>
-                <option value="porte">Porte</option>
-                <option value="finalidade">Finalidade da operação</option>
-                <option value="uf">UF</option>
-                <option value="municipio">Município</option>
-                <option value="tipologiaTerritorial">Tipologia territorial</option>
-              </select>
-            </label>
-          </div>
-        </div>
-        <div class="grid two-cols">
-          <article class="panel">
-            <div class="panel-header">
-              <h3>Treemap CNAE</h3>
-              <p>Hierarquia Setor → Atividade → CNAE.</p>
-            </div>
-            <div id="treemapCnae" class="chart tall-chart"></div>
-          </article>
-          <article class="panel">
-            <div class="panel-header">
-              <h3>Treemap territorial</h3>
-              <p>Hierarquia Macrorregião → UF → Município.</p>
-            </div>
-            <div id="treemapTerritory" class="chart tall-chart"></div>
-          </article>
-        </div>
-        <article class="panel">
-          <div class="panel-header">
-            <h3>Ranking analítico</h3>
-            <p>Ordenação pela métrica selecionada no painel lateral.</p>
-          </div>
-          <div id="rankingChart" class="chart tall-chart"></div>
-        </article>
+      <section id="detailed" class="tab-panel">
+        <div class="section-heading"><div><p class="eyebrow">Visão detalhada</p><h2>Rankings Top 10 e Bottom 10</h2></div><div class="inline-controls"><label>Dimensão<select id="rankingDimension"></select></label><label>Indicador<select id="rankingMetric"></select></label></div></div>
+        <div class="grid two-cols"><article class="panel"><div class="panel-header"><h3>Top 10</h3></div><div id="topRanking" class="chart"></div></article><article class="panel"><div class="panel-header"><h3>Bottom 10</h3></div><div id="bottomRanking" class="chart"></div></article></div>
+        <article class="panel table-panel"><div class="panel-header"><h3>Tabela do ranking</h3><p>Inclui participação das atividades Amazônia Azul e participação feminina.</p></div><div class="table-wrapper"><table id="rankingTable"></table></div></article>
       </section>
-
-      <section id="scatter" class="tab-panel">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Dispersão</p>
-            <h2>Escala e concentração dos financiamentos</h2>
-          </div>
-          <div class="inline-controls">
-            <label>Cor da dispersão
-              <select id="scatterColor">
-                <option value="setor">Setor</option>
-                <option value="atividadeAzul">Atividade Amazônia Azul</option>
-                <option value="tipologiaTerritorial">Tipologia territorial</option>
-                <option value="sexo">Sexo predominante</option>
-              </select>
-            </label>
-            <label>Grupo do boxplot
-              <select id="boxGroup">
-                <option value="macro">Macrorregião</option>
-                <option value="uf">UF</option>
-                <option value="tipologiaTerritorial">Tipologia territorial</option>
-                <option value="setor">Setor</option>
-                <option value="programa">Programa</option>
-                <option value="porte">Porte</option>
-                <option value="finalidade">Finalidade</option>
-              </select>
-            </label>
-          </div>
-        </div>
-        <div class="grid two-cols">
-          <article class="panel">
-            <div class="panel-header">
-              <h3>Valor contratado × contratos por CNAE</h3>
-              <p>Bolhas proporcionais à quantidade de beneficiários.</p>
-            </div>
-            <div id="scatterCnae" class="chart tall-chart"></div>
-          </article>
-          <article class="panel">
-            <div class="panel-header">
-              <h3>Boxplot por grupo de comparação</h3>
-              <p>Mediana, quartis e outliers da métrica selecionada.</p>
-            </div>
-            <div id="boxplotChart" class="chart tall-chart"></div>
-          </article>
-        </div>
-        <article class="panel note-panel">
-          <strong>Nota de leitura.</strong> Valores extremos indicam municípios, setores ou programas com execução acima do padrão observado na seleção atual. Não devem ser interpretados isoladamente como maior efetividade da política.
-        </article>
+      <section id="keyindicators" class="tab-panel">
+        <div class="section-heading"><div><p class="eyebrow">Indicadores chave</p><h2>Participação, crescimento e benchmarking</h2></div></div>
+        <div class="grid two-cols"><article class="panel"><div class="panel-header"><h3>Participação por tipologia territorial</h3><label>Modo<select id="tipologyMode"><option value="shareTotal">% no total da seleção</option><option value="abs">Valores absolutos</option><option value="shareInside">% Amazônia Azul dentro da tipologia</option></select></label></div><div id="tipologyChart" class="chart"></div></article><article class="panel"><div class="panel-header"><h3>Territórios que aumentaram</h3><label>Nível<select id="growthLevel"><option value="municipio">Município</option><option value="uf">UF</option><option value="macro">Macrorregião</option><option value="tipologiaTerritorial">Tipologia territorial</option></select></label></div><div id="increaseCards" class="cards-grid compact"></div><div class="table-wrapper"><table id="increaseTable"></table></div></article></div>
+        <article class="panel"><div class="panel-header"><h3>Evolução por tipologia territorial</h3><label>Indicador<select id="tipologyTrendMetric"><option value="valorAzul">Valor em atividades Amazônia Azul</option><option value="beneficiariosAzul">Beneficiários em atividades Amazônia Azul</option><option value="contratosAzul">Contratos em atividades Amazônia Azul</option><option value="shareAzulValor">Participação no valor</option><option value="shareAzulBeneficiarios">Participação nos beneficiários</option><option value="shareAzulContratos">Participação nos contratos</option><option value="shareMulheresValor">Participação feminina no valor</option></select></label><label>Modo<select id="tipologyTrendMode"><option value="abs">Valores absolutos</option><option value="index">Índice base 100</option><option value="share">Participação percentual</option></select></label></div><div id="tipologyTrend" class="chart"></div></article>
+        <article class="panel"><div class="panel-header"><h3>Benchmarking territorial</h3><div class="inline-controls"><label>Território<select id="benchMain"></select></label><label>Benchmark<select id="benchRef"></select></label></div></div><div id="benchmarkCards" class="cards-grid compact"></div><div class="table-wrapper"><table id="benchmarkTable"></table></div></article>
       </section>
-
       <section id="maps" class="tab-panel">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Mapas</p>
-            <h2>Distribuição municipal da execução</h2>
-          </div>
-          <div class="inline-controls">
-            <label>Tipo de mapa
-              <select id="mapMode">
-                <option value="total">Total municipal</option>
-                <option value="shareMunicipio">Participação no total da seleção</option>
-                <option value="shareAzul">Participação Amazônia Azul no município</option>
-                <option value="shareMulheres">Participação feminina no município</option>
-                <option value="growth">Crescimento/redução</option>
-              </select>
-            </label>
-            <label>Janela de crescimento
-              <select id="mapGrowthWindow">
-                <option value="3">Trimestre</option>
-                <option value="6">Semestre</option>
-                <option value="12">12 meses</option>
-              </select>
-            </label>
-          </div>
-        </div>
-        <article class="panel map-panel">
-          <div id="mapStatus" class="map-status">Carregando geografia municipal local…</div>
-          <div id="municipalMap" class="map"></div>
-          <div id="mapLegend" class="legend"></div>
-        </article>
+        <div class="section-heading"><div><p class="eyebrow">Mapas</p><h2>Distribuição municipal da execução</h2></div><div class="inline-controls"><label>Indicador<select id="mapIndicator"><option value="valor">Valor contratado</option><option value="beneficiarios">Beneficiários</option><option value="contratos">Contratos</option><option value="shareAzulValor">% valor Amazônia Azul</option><option value="shareMulheresValor">% valor mulheres</option><option value="growthValor">Crescimento do valor</option></select></label><button id="resetMap" class="btn btn-ghost">Resetar mapa</button></div></div>
+        <article class="panel"><div id="map" class="map"></div><div id="mapLegend" class="legend"></div></article>
       </section>
-
       <section id="table" class="tab-panel">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Tabela analítica</p>
-            <h2>Base filtrada e agregações exportáveis</h2>
-          </div>
-          <div class="inline-controls">
-            <label>Nível da tabela
-              <select id="tableLevel">
-                <option value="municipio">Município</option>
-                <option value="uf">UF</option>
-                <option value="macro">Macrorregião</option>
-                <option value="cnae">CNAE</option>
-                <option value="setor">Setor</option>
-                <option value="programa">Programa</option>
-                <option value="atividade">Atividade</option>
-                <option value="porte">Porte</option>
-                <option value="finalidade">Finalidade</option>
-                <option value="registro">Linha agregada compacta</option>
-              </select>
-            </label>
-            <label>Busca
-              <input id="tableSearch" type="search" placeholder="Filtrar tabela…" />
-            </label>
-            <button id="downloadTable" class="btn btn-primary">Exportar CSV</button>
-          </div>
-        </div>
-        <article class="panel table-panel">
-          <div id="tableInfo" class="table-info"></div>
-          <div class="table-wrapper">
-            <table id="analyticTable"></table>
-          </div>
-        </article>
+        <div class="section-heading"><div><p class="eyebrow">Tabela analítica</p><h2>Dados agregados e indicadores derivados</h2></div><div class="inline-controls"><label>Nível<select id="tableLevel"></select></label><label>Busca<input id="tableSearch" type="search" placeholder="Filtrar tabela…" /></label><button id="downloadTable" class="btn btn-primary">Exportar CSV</button></div></div>
+        <article class="panel table-panel"><div id="tableInfo" class="table-info"></div><div class="table-wrapper"><table id="analyticTable"></table></div></article>
       </section>
-
-      <section id="methodology" class="tab-panel">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Metodologia</p>
-            <h2>Procedimentos, variáveis e limitações</h2>
-          </div>
-        </div>
-        <article id="methodologyContent" class="panel prose">Carregando metodologia…</article>
-      </section>
+      <section id="methodology" class="tab-panel"><div class="section-heading"><div><p class="eyebrow">Metodologia</p><h2>Procedimentos, variáveis e limitações</h2></div></div><article id="methodologyContent" class="panel prose">Carregando metodologia…</article></section>
     </section>
   </main>
-
-  <footer class="footer">
-    <span>Plataforma analítica estática • GitHub Pages</span>
-    <span id="dataFootnote">Fonte: dados agregados dos fundos, tipologia territorial Amazônia Azul e GeoJSON local de municípios elegíveis.</span>
-  </footer>
-
+  <footer class="footer"><span>Plataforma analítica estática • GitHub Pages</span><span id="dataFootnote">Fonte: dados públicos agregados dos fundos, tipologia territorial Amazônia Azul e malhas locais.</span></footer>
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="js/utils.js"></script>
-  <script src="js/data-loader.js"></script>
-  <script src="js/transforms.js"></script>
-  <script src="js/charts.js"></script>
-  <script src="js/maps.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script src="js/app.js"></script>
 </body>
 </html>

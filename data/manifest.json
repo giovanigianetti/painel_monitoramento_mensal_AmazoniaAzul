@@ -1,20 +1,25 @@
 {
-  "versao": "publico-agregado-v1",
-  "descricao": "Dashboard público com dados agregados e compactados; a base bruta de financiamentos não é publicada no GitHub Pages.",
+  "versao": "publico-agregado-v2-ajustes",
+  "descricao": "Dashboard público com dados agregados e codificados; a base bruta de financiamentos não é publicada no GitHub Pages.",
   "agregados": [
     {
-      "arquivo": "data/processed/operacoes_agregadas_fne_2026_03.json",
+      "arquivo": "data/processed/operacoes_agregadas_publicas.json",
       "fundo": "FNE",
       "periodo_referencia": "2026-03",
       "instituicao_padrao": "BNB",
-      "tipo": "agregado_compacto"
+      "tipo": "agregado_codificado"
     }
   ],
   "territorial": "data/processed/tipologia_amazonia_azul.json",
-  "geojson": "data/geo/municipios_amazonia_azul.geojson",
-  "geojson_tipo": "Point",
+  "geo": {
+    "municipios": "data/geo/municipios_ibge_topo.json",
+    "ufs": "data/geo/ufs_ibge_topo.json",
+    "manifest_malhas": "data/geo/manifest_malhas.json",
+    "formato": "GeoJSON ou TopoJSON"
+  },
   "observacoes": [
-    "O Excel bruto foi substituído por arquivo JSON agregado para reduzir tamanho e evitar disponibilização pública da base original.",
-    "O GeoJSON local contém centroides municipais dos municípios elegíveis ao Programa Amazônia Azul."
+    "O Excel bruto foi removido do pacote público.",
+    "O arquivo público de operações contém apenas agregações codificadas.",
+    "Os mapas são carregados de arquivos locais em data/geo/."
   ]
 }

@@ -1,375 +1,124 @@
-(function () {
-  const ROOT = window.Amazul = window.Amazul || {};
-  const U = () => ROOT.utils;
-  const DL = () => ROOT.dataLoader;
-  const T = () => ROOT.transforms;
-  const C = () => ROOT.charts;
-  const M = () => ROOT.maps;
-
-  const state = {
-    rows: [],
-    territorial: null,
-    manifest: null,
-    diagnostics: [],
-    activeTab: 'overview',
-    tableSort: { key: null, dir: 1 },
-    currentTableRows: []
+(() => {
+  const S = { rows: [], manifest: null, filtersReady: false, map: null, munLayer: null, ufLayer: null, currentTable: [] };
+  const $ = id => document.getElementById(id);
+  const all = '__all__';
+  const pctMetrics = new Set(['shareAzulValor','shareAzulBeneficiarios','shareAzulContratos','shareMulheresValor','shareMulheresBeneficiarios','shareMulheresContratos','growthValor','growthBeneficiarios','growthContratos','ppAzulValor','ppAzulBeneficiarios','ppAzulContratos']);
+  const metricLabels = {
+    valor:'Valor contratado', beneficiarios:'Beneficiários', contratos:'Contratos', valorAzul:'Valor Amazônia Azul', beneficiariosAzul:'Beneficiários Amazônia Azul', contratosAzul:'Contratos Amazônia Azul',
+    shareAzulValor:'% valor Amazônia Azul', shareAzulBeneficiarios:'% beneficiários Amazônia Azul', shareAzulContratos:'% contratos Amazônia Azul',
+    shareMulheresValor:'% valor mulheres', shareMulheresBeneficiarios:'% beneficiários mulheres', shareMulheresContratos:'% contratos mulheres',
+    growthValor:'Crescimento do valor', growthBeneficiarios:'Crescimento dos beneficiários', growthContratos:'Crescimento dos contratos',
+    ticketContrato:'Valor médio por contrato', ticketBeneficiario:'Valor médio por beneficiário'
   };
+  const dimOptions = [
+    ['setor','Setor'],['programa','Programa'],['linha','Linha de financiamento'],['atividade','Atividade'],['cnae','CNAE'],['porte','Porte'],['finalidade','Finalidade da operação'],['uf','UF'],['municipio','Município'],['macro','Macrorregião'],['tipologiaTerritorial','Tipologia territorial'],['instituicao','Instituição operadora'],['pfPj','Natureza do contratante'],['sexo','Sexo']
+  ];
+  const rankingMetrics = [
+    ['valor','Valor contratado'],['beneficiarios','Beneficiários'],['contratos','Contratos'],['shareAzulValor','% valor Amazônia Azul'],['shareAzulBeneficiarios','% beneficiários Amazônia Azul'],['shareAzulContratos','% contratos Amazônia Azul'],['shareMulheresValor','% valor mulheres'],['shareMulheresBeneficiarios','% beneficiários mulheres'],['shareMulheresContratos','% contratos mulheres'],['growthValor','Crescimento percentual do valor'],['growthBeneficiarios','Crescimento percentual dos beneficiários'],['growthContratos','Crescimento percentual dos contratos']
+  ];
+  const tableLevels = [['municipio','Município'],['uf','UF'],['macro','Macrorregião'],['tipologiaTerritorial','Tipologia territorial'],['setor','Setor'],['programa','Programa'],['linha','Linha de financiamento'],['atividade','Atividade'],['cnae','CNAE'],['porte','Porte'],['finalidade','Finalidade'],['instituicao','Instituição operadora'],['pfPj','Natureza do contratante'],['sexo','Sexo'],['registro','Linha agregada pública']];
 
-  const filterIds = {
-    month: 'filterMonth', window: 'filterWindow', indicator: 'indicatorSelect',
-    fundo: 'filterFund', macro: 'filterMacro', uf: 'filterUf', municipio: 'filterMunicipio', tipologia: 'filterTipologia',
-    atividadeAzul: 'filterAtividadeAzul', setor: 'filterSetor', programa: 'filterPrograma', linha: 'filterLinha',
-    atividade: 'filterAtividade', cnae: 'filterCnae', porte: 'filterPorte', finalidade: 'filterFinalidade',
-    pfPj: 'filterPfPj', sexo: 'filterSexo', instituicao: 'filterInstituicao', valorFaixa: 'filterValorFaixa', jurosFaixa: 'filterJurosFaixa'
-  };
+  const fmtBRL = v => (v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0});
+  const fmtNum = v => (v||0).toLocaleString('pt-BR',{maximumFractionDigits:0});
+  const fmtPct = v => v==null || !isFinite(v) ? 'N.D.' : (v*100).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
+  const fmtVal = (metric, v) => metric.includes('share') || metric.includes('growth') || metric.includes('pp') ? fmtPct(v) : (metric.toLowerCase().includes('valor') || metric==='valor' || metric.includes('ticket') ? fmtBRL(v) : fmtNum(v));
+  const safeDiv = (a,b) => b ? a/b : null;
+  const periodIndex = p => { const [y,m]=(p||'0-0').split('-').map(Number); return y*12+m; };
+  const periodRange = (ref, n) => { const idx=periodIndex(ref); const set=new Set(); for(let i=0;i<n;i++){ const x=idx-i; const y=Math.floor((x-1)/12); const m=((x-1)%12)+1; set.add(`${y}-${String(m).padStart(2,'0')}`); } return set; };
+  const previousRange = (ref,n) => { const idx=periodIndex(ref)-n; const y=Math.floor((idx-1)/12); const m=((idx-1)%12)+1; return periodRange(`${y}-${String(m).padStart(2,'0')}`, n); };
+  const monthLabel = p => { if(!p || p==='Sem data') return p; const [y,m]=p.split('-'); return `${m}/${y}`; };
 
-  document.addEventListener('DOMContentLoaded', init);
+  function setLoading(txt){ const el=$('loadingStep'); if(el) el.textContent=txt; }
+  async function json(url){ const r=await fetch(url); if(!r.ok) throw new Error(`Falha ao carregar ${url}`); return r.json(); }
+  function fillSelect(id, values, labelAll='Todos', keep=false){ const el=$(id); if(!el) return; const old=el.value; el.innerHTML=''; if(labelAll!==null){ const o=document.createElement('option'); o.value=all; o.textContent=labelAll; el.appendChild(o); } values.filter(v=>v!=null && v!=='').sort((a,b)=>String(a).localeCompare(String(b),'pt-BR')).forEach(v=>{ const o=document.createElement('option'); o.value=v; o.textContent=v; el.appendChild(o); }); if(keep && [...el.options].some(o=>o.value===old)) el.value=old; }
+  function fillStaticSelect(id, opts){ const el=$(id); if(!el) return; el.innerHTML=''; opts.forEach(([v,l])=>{ const o=document.createElement('option'); o.value=v; o.textContent=l; el.appendChild(o); }); }
 
-  async function init() {
-    try {
-      U().showLoading(true);
-      U().setLoadingStep('Carregando manifesto de dados');
-      const loaded = await DL().loadAllData();
-      state.rows = loaded.rows;
-      state.territorial = loaded.territorial;
-      state.manifest = loaded.manifest;
-      state.diagnostics = loaded.diagnostics;
-      populateFilters();
-      bindEvents();
-      await loadMethodology();
-      renderAll();
-      U().showLoading(false);
-    } catch (err) {
-      console.error(err);
-      U().showLoading(false);
-      showAlert(`Erro ao inicializar o dashboard: ${err.message}`, 'error');
-    }
+  function decodePayload(payload){
+    const schema=payload.schema, cat=new Set(payload.cat_fields), look=payload.lookups;
+    return payload.rows.map(arr=>{ const r={}; schema.forEach((name,i)=>{ r[name]=cat.has(name) ? look[name][arr[i]] : arr[i]; }); return r; });
+  }
+  async function loadData(){
+    setLoading('Carregando manifesto'); S.manifest=await json('data/manifest.json');
+    setLoading('Carregando dados agregados codificados');
+    const files=S.manifest.agregados || [];
+    const allRows=[];
+    for(const f of files){ const payload=await json(f.arquivo); allRows.push(...decodePayload(payload)); }
+    S.rows=allRows;
+    setLoading(`${S.rows.length.toLocaleString('pt-BR')} linhas públicas agregadas carregadas`);
   }
 
-  function populateFilters() {
-    const rows = state.rows;
-    const periods = U().uniqueSorted(rows, r => r.anoMes).sort((a, b) => U().periodIndex(a) - U().periodIndex(b));
-    const monthSel = el('filterMonth');
-    monthSel.innerHTML = '';
-    periods.forEach(p => monthSel.appendChild(U().makeOption(p, U().formatMonth(p))));
-    if (periods.length) monthSel.value = periods[periods.length - 1];
+  function filters(){ return {
+    month:$('filterMonth').value, window:+$('filterWindow').value, indicator:$('indicatorSelect').value, fundo:$('filterFund').value, macro:$('filterMacro').value, uf:$('filterUf').value, municipio:$('filterMunicipio').value,
+    tipologia:$('filterTipologia').value, atividadeAzul:$('filterAtividadeAzul').value, setor:$('filterSetor').value, programa:$('filterPrograma').value, linha:$('filterLinha').value, atividade:$('filterAtividade').value, cnae:$('filterCnae').value, porte:$('filterPorte').value, finalidade:$('filterFinalidade').value, pfPj:$('filterPfPj').value, sexo:$('filterSexo').value, instituicao:$('filterInstituicao').value
+  };}
+  function pass(r, f, opt={}){ if(f.fundo!==all && r.fundo!==f.fundo) return false; if(!opt.ignoreTerritory){ if(f.macro!==all && r.macro!==f.macro) return false; if(f.uf!==all && r.uf!==f.uf) return false; if(f.municipio!==all && r.codMun!==f.municipio) return false; }
+    if(f.tipologia!==all && r.tipologiaTerritorial!==f.tipologia) return false; if(f.atividadeAzul!==all && r.atividadeAzul!==f.atividadeAzul) return false; if(f.setor!==all && r.setor!==f.setor) return false; if(f.programa!==all && r.programa!==f.programa) return false; if(f.linha!==all && r.linha!==f.linha) return false; if(f.atividade!==all && r.atividade!==f.atividade) return false; if(f.cnae!==all && r.cnae!==f.cnae) return false; if(f.porte!==all && r.porte!==f.porte) return false; if(f.finalidade!==all && r.finalidade!==f.finalidade) return false; if(f.pfPj!==all && r.pfPj!==f.pfPj) return false; if(f.sexo!==all && r.sexo!==f.sexo) return false; if(f.instituicao!==all && r.instituicao!==f.instituicao) return false; return true; }
+  function baseRows(f, opt={}){ return S.rows.filter(r=>pass(r,f,opt)); }
+  function inWindow(rows,f,prev=false){ const set=prev?previousRange(f.month,f.window):periodRange(f.month,f.window); return rows.filter(r=>set.has(r.anoMes)); }
+  function summarize(rows){ const s={n:rows.length,valor:0,beneficiarios:0,contratos:0,valorAzul:0,beneficiariosAzul:0,contratosAzul:0,valorMulheres:0,beneficiariosMulheres:0,contratosMulheres:0,registros:0}; rows.forEach(r=>{ const v=+r.valor||0,b=+r.beneficiarios||0,c=+r.contratos||0; s.valor+=v; s.beneficiarios+=b; s.contratos+=c; s.registros+=(+r.registros||0); if(r.atividadeAzul==='Sim'){s.valorAzul+=v;s.beneficiariosAzul+=b;s.contratosAzul+=c;} if(r.sexo==='Mulheres'){s.valorMulheres+=v;s.beneficiariosMulheres+=b;s.contratosMulheres+=c;} }); derive(s); return s; }
+  function derive(s, prev=null){ s.shareAzulValor=safeDiv(s.valorAzul,s.valor); s.shareAzulBeneficiarios=safeDiv(s.beneficiariosAzul,s.beneficiarios); s.shareAzulContratos=safeDiv(s.contratosAzul,s.contratos); s.shareMulheresValor=safeDiv(s.valorMulheres,s.valor); s.shareMulheresBeneficiarios=safeDiv(s.beneficiariosMulheres,s.beneficiarios); s.shareMulheresContratos=safeDiv(s.contratosMulheres,s.contratos); s.ticketContrato=safeDiv(s.valor,s.contratos); s.ticketBeneficiario=safeDiv(s.valor,s.beneficiarios); s.beneficiariosPorContrato=safeDiv(s.beneficiarios,s.contratos); if(prev){ s.growthValor=prev.valor?(s.valor-prev.valor)/prev.valor:null; s.growthBeneficiarios=prev.beneficiarios?(s.beneficiarios-prev.beneficiarios)/prev.beneficiarios:null; s.growthContratos=prev.contratos?(s.contratos-prev.contratos)/prev.contratos:null; s.growthValorAzul=prev.valorAzul?(s.valorAzul-prev.valorAzul)/prev.valorAzul:null; s.growthBeneficiariosAzul=prev.beneficiariosAzul?(s.beneficiariosAzul-prev.beneficiariosAzul)/prev.beneficiariosAzul:null; s.growthContratosAzul=prev.contratosAzul?(s.contratosAzul-prev.contratosAzul)/prev.contratosAzul:null; s.ppAzulValor=(s.shareAzulValor??0)-(prev.shareAzulValor??0); s.ppAzulBeneficiarios=(s.shareAzulBeneficiarios??0)-(prev.shareAzulBeneficiarios??0); s.ppAzulContratos=(s.shareAzulContratos??0)-(prev.shareAzulContratos??0); } return s; }
+  const metric = (s,m) => s?.[m] ?? 0;
+  function group(rows, dim){ const map=new Map(); rows.forEach(r=>{ const label=dim==='municipio'?`${r.municipio} (${r.uf})`:r[dim]; const id=dim==='municipio'?r.codMun:label; if(!map.has(id)) map.set(id,{id,label,rows:[],codMun:r.codMun,uf:r.uf,macro:r.macro,tipologiaTerritorial:r.tipologiaTerritorial}); map.get(id).rows.push(r); }); return [...map.values()].map(g=>Object.assign(g,summarize(g.rows))); }
+  function groupWithGrowth(currRows, prevRows, dim){ const prevMap=new Map(group(prevRows,dim).map(g=>[g.id,g])); return group(currRows,dim).map(g=>derive(g, prevMap.get(g.id)||summarize([]))); }
 
-    fillSelect('filterFund', U().uniqueSorted(rows, r => r.fundo), 'Todos');
-    fillSelect('filterMacro', ['Norte', 'Nordeste', 'Centro-Oeste', 'Sudeste', 'Sul'].filter(m => rows.some(r => r.macro === m)), 'Todas');
-    fillSelect('filterUf', U().uniqueSorted(rows, r => r.uf), 'Todas');
-    fillMunicipioSelect();
-    fillSelect('highlightUf', U().uniqueSorted(rows, r => r.uf), 'Nenhuma', '__none__');
-    fillMunicipioSelect('highlightMun', '__none__', 'Nenhum');
-    fillSelect('filterTipologia', U().uniqueSorted(rows, r => r.tipologiaTerritorial), 'Todas');
-    fillSelect('filterSetor', U().uniqueSorted(rows, r => r.setor), 'Todos');
-    fillSelect('filterPrograma', U().uniqueSorted(rows, r => r.programa), 'Todos');
-    fillSelect('filterLinha', U().uniqueSorted(rows, r => r.linha), 'Todas');
-    fillSelect('filterAtividade', U().uniqueSorted(rows, r => r.atividade), 'Todas');
-    fillSelect('filterCnae', U().uniqueSorted(rows, r => r.cnae), 'Todas');
-    fillSelect('filterPorte', U().uniqueSorted(rows, r => r.porte), 'Todos');
-    fillSelect('filterFinalidade', U().uniqueSorted(rows, r => r.finalidade), 'Todas');
-    fillSelect('filterPfPj', U().uniqueSorted(rows, r => r.pfPj), 'Todas');
-    fillSelect('filterSexo', U().uniqueSorted(rows, r => r.sexo), 'Todos');
-    fillSelect('filterInstituicao', U().uniqueSorted(rows, r => r.instituicao), 'Todas');
-    fillSelect('filterJurosFaixa', U().uniqueSorted(rows, r => r.taxaJurosFaixa), 'Todas');
+  function initFilters(){
+    const periods=[...new Set(S.rows.map(r=>r.anoMes))].sort((a,b)=>periodIndex(a)-periodIndex(b)); fillSelect('filterMonth', periods, null); $('filterMonth').value=periods[periods.length-1];
+    fillSelect('filterFund',[...new Set(S.rows.map(r=>r.fundo))],'Todos'); fillSelect('filterMacro',[...new Set(S.rows.map(r=>r.macro))],'Todas'); fillSelect('filterUf',[...new Set(S.rows.map(r=>r.uf))],'Todas');
+    fillSelect('filterMunicipio',[...new Map(S.rows.map(r=>[r.codMun,`${r.municipio} (${r.uf})`])).entries()].map(([k,v])=>({k,v})), 'Todos');
+    // custom municipio select with code values
+    const mun=$('filterMunicipio'); mun.innerHTML='<option value="__all__">Todos</option>'; [...new Map(S.rows.filter(r=>r.elegivel).map(r=>[r.codMun,`${r.municipio} (${r.uf})`])).entries()].sort((a,b)=>a[1].localeCompare(b[1],'pt-BR')).forEach(([k,v])=>{ const o=document.createElement('option'); o.value=k; o.textContent=v; mun.appendChild(o); });
+    fillSelect('filterTipologia',[...new Set(S.rows.filter(r=>r.elegivel).map(r=>r.tipologiaTerritorial))],'Todas'); fillSelect('filterSetor',[...new Set(S.rows.map(r=>r.setor))],'Todos'); fillSelect('filterPrograma',[...new Set(S.rows.map(r=>r.programa))],'Todos'); fillSelect('filterLinha',[...new Set(S.rows.map(r=>r.linha))],'Todas'); fillSelect('filterAtividade',[...new Set(S.rows.map(r=>r.atividade))],'Todas'); fillSelect('filterCnae',[...new Set(S.rows.map(r=>r.cnae))],'Todas'); fillSelect('filterPorte',[...new Set(S.rows.map(r=>r.porte))],'Todos'); fillSelect('filterFinalidade',[...new Set(S.rows.map(r=>r.finalidade))],'Todas'); fillSelect('filterPfPj',[...new Set(S.rows.map(r=>r.pfPj))],'Todas'); fillSelect('filterSexo',[...new Set(S.rows.map(r=>r.sexo))],'Todos'); fillSelect('filterInstituicao',[...new Set(S.rows.map(r=>r.instituicao))],'Todas');
+    fillStaticSelect('rankingDimension', dimOptions); fillStaticSelect('rankingMetric', rankingMetrics); fillStaticSelect('tableLevel', tableLevels);
+    populateBench();
+    [...document.querySelectorAll('select,input')].forEach(el=>el.addEventListener('change',render)); $('btnRefresh').onclick=render; $('clearFilters').onclick=clearFilters; $('downloadTable').onclick=()=>downloadCSV(S.currentTable,'tabela_analitica_amazul.csv'); $('btnExportSelection').onclick=()=>downloadCSV(S.currentTable,'selecao_atual_amazul.csv'); $('tableSearch').addEventListener('input',renderTable);
+    document.querySelectorAll('.tab-button').forEach(b=>b.addEventListener('click',()=>{ document.querySelectorAll('.tab-button').forEach(x=>x.classList.remove('active')); document.querySelectorAll('.tab-panel').forEach(x=>x.classList.remove('active')); b.classList.add('active'); $(b.dataset.tab).classList.add('active'); if(b.dataset.tab==='maps') setTimeout(renderMap,100); }));
   }
+  function populateBench(){ const opts=[['brasil','Brasil']]; ['Norte','Nordeste','Centro-Oeste','Sudeste','Sul'].forEach(x=>opts.push([`macro:${x}`,x])); [...new Set(S.rows.map(r=>r.uf))].sort().forEach(x=>opts.push([`uf:${x}`,`UF ${x}`])); [...new Map(S.rows.filter(r=>r.elegivel).map(r=>[r.codMun,`${r.municipio} (${r.uf})`])).entries()].sort((a,b)=>a[1].localeCompare(b[1],'pt-BR')).forEach(([k,v])=>opts.push([`mun:${k}`,v])); [...new Set(S.rows.filter(r=>r.elegivel).map(r=>r.tipologiaTerritorial))].sort().forEach(x=>opts.push([`tip:${x}`,`Tipologia ${x}`])); fillStaticSelect('benchMain',opts); fillStaticSelect('benchRef',opts); $('benchRef').value='brasil'; }
+  function clearFilters(){ ['filterFund','filterMacro','filterUf','filterMunicipio','filterTipologia','filterAtividadeAzul','filterSetor','filterPrograma','filterLinha','filterAtividade','filterCnae','filterPorte','filterFinalidade','filterPfPj','filterSexo','filterInstituicao'].forEach(id=>$(id).value=all); render(); }
 
-  function fillSelect(id, values, allLabel = 'Todos', allValue = '__all__') {
-    const s = el(id);
-    if (!s) return;
-    const current = s.value;
-    s.innerHTML = '';
-    s.appendChild(U().makeOption(allValue, allLabel));
-    values.forEach(v => s.appendChild(U().makeOption(v, v)));
-    if ([...s.options].some(o => o.value === current)) s.value = current;
+  function card(title, value, note){ return `<article class="card"><h3>${title}</h3><strong>${value}</strong>${note?`<p>${note}</p>`:''}</article>`; }
+  function renderCards(elig, allsum){ $('cards').innerHTML = [
+    card('Valor total nos municípios elegíveis',fmtBRL(elig.valor),`${fmtNum(elig.registros)} registros agregados públicos`),
+    card('Beneficiários totais nos municípios elegíveis',fmtNum(elig.beneficiarios),''),
+    card('Contratos totais nos municípios elegíveis',fmtNum(elig.contratos),''),
+    card('Valor em atividades Amazônia Azul',fmtBRL(elig.valorAzul),`${fmtPct(elig.shareAzulValor)} do total nos municípios elegíveis`),
+    card('Beneficiários em atividades Amazônia Azul',fmtNum(elig.beneficiariosAzul),`${fmtPct(elig.shareAzulBeneficiarios)} do total nos municípios elegíveis`),
+    card('Contratos em atividades Amazônia Azul',fmtNum(elig.contratosAzul),`${fmtPct(elig.shareAzulContratos)} do total nos municípios elegíveis`),
+    card('Participação feminina no valor',fmtPct(elig.shareMulheresValor),'Registros identificados como mulheres no numerador'),
+    card('Participação feminina nos beneficiários',fmtPct(elig.shareMulheresBeneficiarios),''),
+    card('Participação feminina nos contratos',fmtPct(elig.shareMulheresContratos),'')
+  ].join(''); }
+  function renderNarrative(elig, allsum, generalEligible){ const f=filters(); $('selectionPill').textContent=`${monthLabel(f.month)} • ${f.window} mês(es)`; $('autoNarrative').textContent = `Na janela selecionada, os municípios elegíveis ao Programa Amazônia Azul somaram ${fmtBRL(elig.valor)}, ${fmtNum(elig.beneficiarios)} beneficiários e ${fmtNum(elig.contratos)} contratos. Dentro desses municípios, as atividades vinculadas à Amazônia Azul responderam por ${fmtBRL(elig.valorAzul)}, equivalentes a ${fmtPct(elig.shareAzulValor)} do valor contratado, ${fmtPct(elig.shareAzulBeneficiarios)} dos beneficiários e ${fmtPct(elig.shareAzulContratos)} dos contratos. Considerando o total geral da base, os municípios elegíveis representaram ${fmtPct(generalEligible.shareValorElegivel)} do valor contratado e as atividades Amazônia Azul representaram ${fmtPct(generalEligible.shareValorAzulGeral)} do valor total.`; }
+
+  function plotBar(id, x, y, title, metricName){ Plotly.react(id,[{type:'bar',x,y,hovertemplate:'%{x}<br>%{y}<extra></extra>'}],{title:{text:title,font:{size:14}},margin:{l:55,r:15,t:55,b:80},yaxis:{tickformat:pctMetrics.has(metricName)?'.1%':undefined},paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)'},{displayModeBar:false,responsive:true}); }
+  function plotLine(id, x, y, name, metricName){ Plotly.react(id,[{type:'scatter',mode:'lines+markers',x,y,name,hovertemplate:'%{x}<br>%{y}<extra></extra>'}],{title:{text:name,font:{size:14}},margin:{l:55,r:15,t:55,b:70},yaxis:{tickformat:pctMetrics.has(metricName)?'.1%':undefined},paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)'},{displayModeBar:false,responsive:true}); }
+  function renderTrend(base, f){ const mode=$('trendMode').value; const periods=[...periodRange(f.month,f.window)].sort((a,b)=>periodIndex(a)-periodIndex(b)); const total=summarize(base.filter(r=>periods.includes?false:true)); const winRows=inWindow(base,f); const denom=summarize(winRows); ['valor','beneficiarios','contratos'].forEach(m=>{ const vals=periods.map(p=>summarize(base.filter(r=>r.anoMes===p))); const y=vals.map(s=>mode==='share' ? safeDiv(metric(s,m), metric(denom,m))||0 : metric(s,m)); plotLine(`trend${m==='valor'?'Valor':m==='beneficiarios'?'Beneficiarios':'Contratos'}`, periods.map(monthLabel), y, metricLabels[m], mode==='share'?'share':m); }); }
+  function renderTerritory(f){ const base=baseRows(f,{ignoreTerritory:true}); const win=inWindow(base,f); const rows=[]; rows.push(['Brasil',summarize(win)]); ['Norte','Nordeste','Centro-Oeste','Sudeste','Sul'].forEach(m=>rows.push([m,summarize(win.filter(r=>r.macro===m))])); if(f.uf!==all) rows.push([`UF ${f.uf}`,summarize(win.filter(r=>r.uf===f.uf))]); if(f.municipio!==all){ const label=(S.rows.find(r=>r.codMun===f.municipio)||{}).municipio || f.municipio; rows.push([label,summarize(win.filter(r=>r.codMun===f.municipio))]); } const denom=summarize(win); const mode=$('territoryMode').value; ['valor','beneficiarios','contratos'].forEach(m=>{ const y=rows.map(([_,s])=>mode==='share' ? safeDiv(metric(s,m),metric(denom,m))||0 : metric(s,m)); plotBar(`territory${m==='valor'?'Valor':m==='beneficiarios'?'Beneficiarios':'Contratos'}`, rows.map(r=>r[0]), y, metricLabels[m], mode==='share'?'share':m); }); }
+  function renderEligibleTotal(allWin){ const elig=summarize(allWin.filter(r=>r.elegivel)); const allsum=summarize(allWin); const gen={shareValorElegivel:safeDiv(elig.valor,allsum.valor),shareBenefElegivel:safeDiv(elig.beneficiarios,allsum.beneficiarios),shareContrElegivel:safeDiv(elig.contratos,allsum.contratos),shareValorAzulGeral:safeDiv(allsum.valorAzul,allsum.valor),shareBenefAzulGeral:safeDiv(allsum.beneficiariosAzul,allsum.beneficiarios),shareContrAzulGeral:safeDiv(allsum.contratosAzul,allsum.contratos)}; $('eligibleTotalCards').innerHTML=[card('Municípios elegíveis: valor',fmtPct(gen.shareValorElegivel),fmtBRL(elig.valor)+' de '+fmtBRL(allsum.valor)),card('Municípios elegíveis: beneficiários',fmtPct(gen.shareBenefElegivel),fmtNum(elig.beneficiarios)+' de '+fmtNum(allsum.beneficiarios)),card('Municípios elegíveis: contratos',fmtPct(gen.shareContrElegivel),fmtNum(elig.contratos)+' de '+fmtNum(allsum.contratos)),card('Atividades Amazônia Azul no total geral',fmtPct(gen.shareValorAzulGeral),fmtBRL(allsum.valorAzul)+' de '+fmtBRL(allsum.valor))].join(''); Plotly.react('eligibleTotalChart',[{type:'bar',name:'Municípios elegíveis',x:['Valor','Beneficiários','Contratos'],y:[gen.shareValorElegivel,gen.shareBenefElegivel,gen.shareContrElegivel]},{type:'bar',name:'Atividades Amazônia Azul no total geral',x:['Valor','Beneficiários','Contratos'],y:[gen.shareValorAzulGeral,gen.shareBenefAzulGeral,gen.shareContrAzulGeral]}],{barmode:'group',margin:{l:55,r:20,t:20,b:60},yaxis:{tickformat:'.1%'},paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)'},{displayModeBar:false,responsive:true}); return gen; }
+
+  function renderRanking(curr, prev){ const dim=$('rankingDimension').value, m=$('rankingMetric').value; const data=groupWithGrowth(curr,prev,dim).filter(g=>g.label && g.label!=='Não informado'); const sorted=[...data].sort((a,b)=>(metric(b,m)||0)-(metric(a,m)||0)); const top=sorted.slice(0,10); const bottom=sorted.filter(g=>metric(g,m)!=null && isFinite(metric(g,m))).slice(-10).reverse(); plotBar('topRanking',top.map(g=>g.label),top.map(g=>metric(g,m)||0),`Top 10 • ${metricLabels[m]||m}`,m); plotBar('bottomRanking',bottom.map(g=>g.label),bottom.map(g=>metric(g,m)||0),`Bottom 10 • ${metricLabels[m]||m}`,m); const rows=sorted.slice(0,100).map(g=>({'Dimensão':g.label,'Valor':fmtBRL(g.valor),'Beneficiários':fmtNum(g.beneficiarios),'Contratos':fmtNum(g.contratos),'% valor Azul':fmtPct(g.shareAzulValor),'% beneficiários Azul':fmtPct(g.shareAzulBeneficiarios),'% contratos Azul':fmtPct(g.shareAzulContratos),'% valor mulheres':fmtPct(g.shareMulheresValor),'% beneficiários mulheres':fmtPct(g.shareMulheresBeneficiarios),'% contratos mulheres':fmtPct(g.shareMulheresContratos),'Indicador ordenado':fmtVal(m,metric(g,m))})); renderPlainTable('rankingTable',rows); }
+  function renderKeyIndicators(baseElig, currElig, prevElig){ const byTip=group(currElig,'tipologiaTerritorial').sort((a,b)=>a.label.localeCompare(b.label,'pt-BR')); const mode=$('tipologyMode').value; const total=summarize(currElig); const traces=['valor','beneficiarios','contratos'].map(m=>({type:'bar',name:metricLabels[m],x:byTip.map(g=>g.label),y:byTip.map(g=> mode==='abs'?metric(g,m): mode==='shareInside'? (m==='valor'?g.shareAzulValor:m==='beneficiarios'?g.shareAzulBeneficiarios:g.shareAzulContratos) : safeDiv(metric(g,m),metric(total,m))||0)})); Plotly.react('tipologyChart',traces,{barmode:'group',margin:{l:60,r:20,t:25,b:90},yaxis:{tickformat:mode==='abs'?undefined:'.1%'},paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)'},{displayModeBar:false,responsive:true});
+    const level=$('growthLevel').value; const inc=groupWithGrowth(currElig,prevElig,level); const countAbs=m=>inc.filter(g=>metric(g,m)>metric((group(prevElig,level).find(x=>x.id===g.id)||{}),m)).length; const countShare=m=>inc.filter(g=>(g[m]||0)>0).length; $('increaseCards').innerHTML=[card('Aumentaram valor absoluto',fmtNum(inc.filter(g=>g.growthValorAzul>0).length),'atividades vinculadas à Amazônia Azul'),card('Aumentaram beneficiários',fmtNum(inc.filter(g=>g.growthBeneficiariosAzul>0).length),''),card('Aumentaram contratos',fmtNum(inc.filter(g=>g.growthContratosAzul>0).length),''),card('Aumentaram participação no valor',fmtNum(inc.filter(g=>g.ppAzulValor>0).length),'pontos percentuais'),card('Aumentaram participação nos beneficiários',fmtNum(inc.filter(g=>g.ppAzulBeneficiarios>0).length),''),card('Aumentaram participação nos contratos',fmtNum(inc.filter(g=>g.ppAzulContratos>0).length),'')].join(''); renderPlainTable('increaseTable',inc.sort((a,b)=>(b.growthValor||-99)-(a.growthValor||-99)).slice(0,50).map(g=>({'Território':g.label,'Crescimento valor Azul':fmtPct(g.growthValorAzul),'Crescimento beneficiários Azul':fmtPct(g.growthBeneficiariosAzul),'Crescimento contratos Azul':fmtPct(g.growthContratosAzul),'Δ p.p. valor Azul':fmtPct(g.ppAzulValor),'Δ p.p. benef. Azul':fmtPct(g.ppAzulBeneficiarios),'Δ p.p. contratos Azul':fmtPct(g.ppAzulContratos),'Classificação':g.growthValor>0?'Aumentou':g.growthValor<0?'Reduziu':'Estável'})));
+    renderTipologyTrend(baseElig); renderBenchmark(currElig);
   }
+  function renderTipologyTrend(baseElig){ const m=$('tipologyTrendMetric').value, mode=$('tipologyTrendMode').value; const periods=[...new Set(baseElig.map(r=>r.anoMes))].sort((a,b)=>periodIndex(a)-periodIndex(b)); const tips=[...new Set(baseElig.map(r=>r.tipologiaTerritorial))].sort(); const traces=tips.map(t=>{ const vals=periods.map(p=>summarize(baseElig.filter(r=>r.tipologiaTerritorial===t && r.anoMes===p))); let y=vals.map(s=>metric(s,m)||0); if(mode==='index'){ const first=y.find(v=>v>0)||null; y=y.map(v=>first?100*v/first:null); } return {type:'scatter',mode:'lines+markers',name:t,x:periods.map(monthLabel),y}; }); Plotly.react('tipologyTrend',traces,{margin:{l:60,r:20,t:20,b:60},yaxis:{tickformat:mode==='share'||pctMetrics.has(m)?'.1%':undefined},paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)'},{displayModeBar:false,responsive:true}); }
+  function rowsForBench(sel, currElig){ if(sel==='brasil') return currElig; const [typ,val]=sel.split(':'); if(typ==='macro') return currElig.filter(r=>r.macro===val); if(typ==='uf') return currElig.filter(r=>r.uf===val); if(typ==='mun') return currElig.filter(r=>r.codMun===val); if(typ==='tip') return currElig.filter(r=>r.tipologiaTerritorial===val); return currElig; }
+  function renderBenchmark(currElig){ const a=summarize(rowsForBench($('benchMain').value,currElig)), b=summarize(rowsForBench($('benchRef').value,currElig)); const mets=['valor','valorAzul','beneficiarios','beneficiariosAzul','contratos','contratosAzul','shareAzulValor','shareAzulBeneficiarios','shareAzulContratos','shareMulheresValor','shareMulheresBeneficiarios','shareMulheresContratos']; const rows=mets.map(m=>{ const av=metric(a,m), bv=metric(b,m), diff=av-bv, rel=bv?diff/bv:null; return {'Indicador':metricLabels[m]||m,'Território selecionado':fmtVal(m,av),'Benchmark':fmtVal(m,bv),'Diferença absoluta':fmtVal(m,diff),'Diferença relativa':fmtPct(rel),'Diferença p.p.':pctMetrics.has(m)?fmtPct(diff):'N.A.'}; }); $('benchmarkCards').innerHTML=[card('Diferença de valor',fmtBRL(a.valor-b.valor),fmtPct(b.valor?(a.valor-b.valor)/b.valor:null)+' frente ao benchmark'),card('Diferença de % valor Azul',fmtPct((a.shareAzulValor??0)-(b.shareAzulValor??0)),'pontos percentuais'),card('Diferença de % valor mulheres',fmtPct((a.shareMulheresValor??0)-(b.shareMulheresValor??0)),'pontos percentuais')].join(''); renderPlainTable('benchmarkTable',rows); }
 
-  function fillMunicipioSelect(id = 'filterMunicipio', allValue = '__all__', allLabel = 'Todos') {
-    const s = el(id);
-    if (!s) return;
-    const rows = state.rows;
-    const current = s.value;
-    const items = Array.from(new Map(rows.map(r => [r.codMun, `${r.municipio} (${r.uf})`])).entries()).sort((a, b) => a[1].localeCompare(b[1], 'pt-BR'));
-    s.innerHTML = '';
-    s.appendChild(U().makeOption(allValue, allLabel));
-    items.forEach(([code, label]) => s.appendChild(U().makeOption(code, label)));
-    if ([...s.options].some(o => o.value === current)) s.value = current;
-  }
+  function renderTable(){ const f=filters(); const curr=inWindow(baseRows(f),f).filter(r=>r.elegivel); const prev=inWindow(baseRows(f),f,true).filter(r=>r.elegivel); const level=$('tableLevel').value; let rows; if(level==='registro'){ rows=curr.slice(0,500).map(r=>formatRecordRow(r)); } else { rows=groupWithGrowth(curr,prev,level).map(g=>formatAggRow(g)); } const q=($('tableSearch').value||'').toLowerCase(); if(q) rows=rows.filter(r=>Object.values(r).join(' ').toLowerCase().includes(q)); S.currentTable=rows; $('tableInfo').textContent=`${rows.length.toLocaleString('pt-BR')} linhas exibidas. Dados agregados; a base bruta não é publicada.`; renderPlainTable('analyticTable',rows.slice(0,500)); }
+  function formatRecordRow(r){ return {'Mês':monthLabel(r.anoMes),'UF':r.uf,'Município':`${r.municipio} (${r.codMun})`,'Tipologia territorial':r.tipologiaTerritorial,'Atividade Azul':r.atividadeAzul,'Setor':r.setor,'Programa':r.programa,'CNAE':r.cnae,'Valor':fmtBRL(r.valor),'Beneficiários':fmtNum(r.beneficiarios),'Contratos':fmtNum(r.contratos),'Registros agregados':fmtNum(r.registros)}; }
+  function formatAggRow(g){ return {'Dimensão':g.label,'Valor total':fmtBRL(g.valor),'Valor Amazônia Azul':fmtBRL(g.valorAzul),'Beneficiários totais':fmtNum(g.beneficiarios),'Beneficiários Amazônia Azul':fmtNum(g.beneficiariosAzul),'Contratos totais':fmtNum(g.contratos),'Contratos Amazônia Azul':fmtNum(g.contratosAzul),'% valor Azul':fmtPct(g.shareAzulValor),'% beneficiários Azul':fmtPct(g.shareAzulBeneficiarios),'% contratos Azul':fmtPct(g.shareAzulContratos),'Valor mulheres':fmtBRL(g.valorMulheres),'% valor mulheres':fmtPct(g.shareMulheresValor),'% beneficiários mulheres':fmtPct(g.shareMulheresBeneficiarios),'% contratos mulheres':fmtPct(g.shareMulheresContratos),'Valor médio/contrato':fmtBRL(g.ticketContrato),'Valor médio/beneficiário':fmtBRL(g.ticketBeneficiario),'Crescimento valor Azul':fmtPct(g.growthValorAzul),'Crescimento beneficiários Azul':fmtPct(g.growthBeneficiariosAzul),'Crescimento contratos Azul':fmtPct(g.growthContratosAzul),'Δ p.p. valor Azul':fmtPct(g.ppAzulValor),'Classificação':g.growthValor>0?'Aumentou':g.growthValor<0?'Reduziu':g.growthValor===null?'Sem base anterior':'Estável'}; }
+  function renderPlainTable(id, rows){ const el=$(id); if(!el) return; if(!rows.length){ el.innerHTML='<tbody><tr><td>Nenhum dado para a seleção.</td></tr></tbody>'; return; } const cols=Object.keys(rows[0]); el.className='data-table'; el.innerHTML='<thead><tr>'+cols.map(c=>`<th>${c}</th>`).join('')+'</tr></thead><tbody>'+rows.map(r=>'<tr>'+cols.map(c=>`<td>${r[c]??''}</td>`).join('')+'</tr>').join('')+'</tbody>'; }
+  function downloadCSV(rows, name){ if(!rows.length) return; const cols=Object.keys(rows[0]); const csv=[cols.join(';')].concat(rows.map(r=>cols.map(c=>`"${String(r[c]??'').replace(/"/g,'""')}"`).join(';'))).join('\n'); const blob=new Blob([csv],{type:'text/csv;charset=utf-8'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); URL.revokeObjectURL(a.href); }
 
-  function bindEvents() {
-    Object.values(filterIds).forEach(id => el(id)?.addEventListener('change', U().debounce(renderAll, 160)));
-    ['topNSelect','rankingDimension','scatterColor','boxGroup','mapMode','mapGrowthWindow','tableLevel'].forEach(id => el(id)?.addEventListener('change', U().debounce(renderAll, 160)));
-    el('tableSearch')?.addEventListener('input', U().debounce(renderTable, 180));
-    el('downloadTable')?.addEventListener('click', () => exportTable());
-    el('btnExportSelection')?.addEventListener('click', () => exportSelection());
-    el('btnRefresh')?.addEventListener('click', () => renderAll());
-    el('clearFilters')?.addEventListener('click', clearFilters);
-    document.querySelectorAll('.tab-button').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-        btn.classList.add('active');
-        state.activeTab = btn.dataset.tab;
-        el(state.activeTab)?.classList.add('active');
-        setTimeout(() => renderAll(), 80);
-      });
-    });
-  }
+  async function renderMap(){ const f=filters(); const curr=inWindow(baseRows(f),f).filter(r=>r.elegivel); const prev=inWindow(baseRows(f),f,true).filter(r=>r.elegivel); const agg=new Map(groupWithGrowth(curr,prev,'municipio').map(g=>[String(g.codMun||g.id),g])); if(!S.map){ S.map=L.map('map',{scrollWheelZoom:true}).setView([-14.2,-51.9],4); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap'}).addTo(S.map); $('resetMap').onclick=()=>S.map.setView([-14.2,-51.9],4); }
+    if(S.munLayer) S.map.removeLayer(S.munLayer); if(S.ufLayer) S.map.removeLayer(S.ufLayer); let mun=await loadGeo(S.manifest.geo.municipios); let ufs=await loadGeo(S.manifest.geo.ufs); const m=$('mapIndicator').value; const vals=[...agg.values()].map(g=>metric(g,m)).filter(v=>v!=null&&isFinite(v)); const max=Math.max(...vals,0), min=Math.min(...vals,0); const color=v=>{ if(v==null) return '#e5e7eb'; if(m.includes('growth')) return v>0?'#2563eb':v<0?'#dc2626':'#94a3b8'; const t=max?Math.max(0,Math.min(1,v/max)):0; return `rgb(${220-Math.round(120*t)},${235-Math.round(100*t)},${245-Math.round(40*t)})`; };
+    S.munLayer=L.geoJSON(mun,{style:ft=>{ const cod=String(ft.properties.codigo_ibge||ft.properties.CD_MUN||ft.id); const g=agg.get(cod); return {color:'#94a3b8',weight:.6,fillColor:color(g?metric(g,m):null),fillOpacity:g?.valor?0.75:0.25}; },onEachFeature:(ft,ly)=>{ const cod=String(ft.properties.codigo_ibge||ft.properties.CD_MUN||ft.id); const g=agg.get(cod); ly.bindTooltip(g?`<b>${g.label}</b><br>Tipologia: ${g.tipologiaTerritorial}<br>${metricLabels[m]||m}: ${fmtVal(m,metric(g,m))}<br>Valor: ${fmtBRL(g.valor)}<br>Beneficiários: ${fmtNum(g.beneficiarios)}<br>Contratos: ${fmtNum(g.contratos)}<br>% valor Azul: ${fmtPct(g.shareAzulValor)}<br>% valor mulheres: ${fmtPct(g.shareMulheresValor)}`:`Município sem dados na seleção`); }}).addTo(S.map);
+    S.ufLayer=L.geoJSON(ufs,{style:{color:'#0f172a',weight:1.8,fillOpacity:0,interactive:false}}).addTo(S.map); try{ S.map.fitBounds(S.munLayer.getBounds(),{padding:[20,20]}); }catch(e){} $('mapLegend').textContent=`Legenda: ${metricLabels[m]||m}. Arquivos geográficos carregados localmente de data/geo/.`; }
+  async function loadGeo(url){ const g=await json(url); if(g.type==='Topology' && window.topojson){ const key=Object.keys(g.objects)[0]; return topojson.feature(g,g.objects[key]); } return g; }
 
-  function clearFilters() {
-    Object.entries(filterIds).forEach(([key, id]) => {
-      const s = el(id);
-      if (!s) return;
-      if (key === 'month') {
-        if (s.options.length) s.selectedIndex = s.options.length - 1;
-      } else if (key === 'window') s.value = '1';
-      else if (key === 'indicator') s.value = 'valor';
-      else s.selectedIndex = 0;
-    });
-    ['highlightUf','highlightMun'].forEach(id => { if (el(id)) el(id).selectedIndex = 0; });
-    el('topNSelect').value = '20';
-    el('rankingDimension').value = 'setor';
-    el('scatterColor').value = 'setor';
-    el('boxGroup').value = 'macro';
-    el('mapMode').value = 'total';
-    el('mapGrowthWindow').value = '3';
-    el('tableLevel').value = 'municipio';
-    el('tableSearch').value = '';
-    renderAll();
-  }
-
-  function filters() {
-    const obj = {};
-    Object.entries(filterIds).forEach(([key, id]) => obj[key] = el(id)?.value || '__all__');
-    obj.months = Number(obj.window || 1);
-    obj.highlightUf = el('highlightUf')?.value || '__none__';
-    obj.highlightMun = el('highlightMun')?.value || '__none__';
-    obj.topN = Number(el('topNSelect')?.value || 20);
-    obj.rankingDimension = el('rankingDimension')?.value || 'setor';
-    obj.scatterColor = el('scatterColor')?.value || 'setor';
-    obj.boxGroup = el('boxGroup')?.value || 'macro';
-    obj.mapMode = el('mapMode')?.value || 'total';
-    obj.mapGrowthWindow = Number(el('mapGrowthWindow')?.value || 3);
-    obj.tableLevel = el('tableLevel')?.value || 'municipio';
-    return obj;
-  }
-
-  function currentData() {
-    const f = filters();
-    const noTime = T().applyNonTimeFilters(state.rows, f);
-    const current = T().applyTimeWindow(noTime, f.month, f.months);
-    const previous = T().applyPreviousTimeWindow(noTime, f.month, f.months);
-    return { f, noTime, current, previous, summary: T().summarize(current), previousSummary: T().summarize(previous) };
-  }
-
-  function renderAll() {
-    clearAlerts();
-    if (!state.rows.length) {
-      showAlert('Nenhuma linha agregada elegível foi carregada. Verifique se os códigos municipais da base financeira correspondem à tipologia territorial.', 'error');
-      return;
-    }
-    state.diagnostics.forEach(d => {
-      if (d.registrosForaDaTipologia > 0) showAlert(`${d.fundo}: ${U().formatNumber(d.registrosForaDaTipologia)} registros do arquivo original ficaram fora do universo de municípios elegíveis na etapa de pré-processamento e foram excluídos da base pública agregada.`, 'info');
-    });
-    const data = currentData();
-    updateSelectionPill(data);
-    renderCards(data);
-    if (state.activeTab === 'overview') renderOverview(data);
-    if (state.activeTab === 'rankings') renderRankings(data);
-    if (state.activeTab === 'scatter') renderScatter(data);
-    if (state.activeTab === 'maps') renderMaps(data);
-    if (state.activeTab === 'table') renderTable();
-  }
-
-  function renderCards({ f, summary, previousSummary }) {
-    const metric = f.indicator;
-    const g = T().growth(summary, previousSummary, metric);
-    const cards = [
-      { label: 'Valor contratado', value: U().formatBRL(summary.valor), sub: growthText(T().growth(summary, previousSummary, 'valor')) },
-      { label: 'Beneficiários', value: U().formatNumber(summary.beneficiarios), sub: growthText(T().growth(summary, previousSummary, 'beneficiarios')) },
-      { label: 'Contratos', value: U().formatNumber(summary.contratos), sub: growthText(T().growth(summary, previousSummary, 'contratos')) },
-      { label: 'Métrica selecionada', value: formatMetricValue(T().getMetric(summary, metric), metric), sub: growthText(g) },
-      { label: 'Part. Amazônia Azul no valor', value: U().formatPercent(summary.shareAzulValor), sub: `${U().formatBRL(summary.valorAzul)} em atividades vinculadas` },
-      { label: 'Part. Amazônia Azul nos beneficiários', value: U().formatPercent(summary.shareAzulBeneficiarios), sub: `${U().formatNumber(summary.beneficiariosAzul)} beneficiários` },
-      { label: 'Part. feminina no valor', value: U().formatPercent(summary.shareMulheresValor), sub: `${U().formatBRL(summary.valorMulheres)} associados a mulheres` },
-      { label: 'Part. feminina nos contratos', value: U().formatPercent(summary.shareMulheresContratos), sub: `${U().formatNumber(summary.contratosMulheres)} contratos` }
-    ];
-    const container = el('cards');
-    container.innerHTML = cards.map(c => `<article class="card ${cardClass(c.sub)}"><div class="card-label">${c.label}</div><div class="card-value">${c.value}</div><div class="card-sub">${c.sub}</div></article>`).join('');
-  }
-
-  function cardClass(text) {
-    if (String(text).includes('+')) return 'positive';
-    if (String(text).includes('-')) return 'negative';
-    return 'neutral';
-  }
-
-  function growthText(value) {
-    if (value === null || value === undefined || !Number.isFinite(Number(value))) return 'Comparação anterior indisponível';
-    const sign = value > 0 ? '+' : '';
-    return `${sign}${U().formatPercent(value)} frente à janela anterior`;
-  }
-
-  function formatMetricValue(value, metric) {
-    if (metric === 'valor' || metric === 'ticketContrato' || metric === 'ticketBeneficiario') return U().formatBRL(value);
-    return U().formatNumber(value);
-  }
-
-  function renderOverview(data) {
-    const { f, noTime, current, summary } = data;
-    C().drawOverviewTrend(noTime, f.indicator);
-    C().drawComparison(noTime, f.indicator, f.highlightUf, f.highlightMun);
-    C().drawComposition(summary);
-    renderNarrative(data);
-  }
-
-  function renderNarrative({ f, summary }) {
-    const ref = U().formatMonth(f.month);
-    const windowLabel = windowLabelFromMonths(f.months);
-    const terr = activeTerritoryText(f);
-    el('autoNarrative').innerHTML = `No período de referência <strong>${ref}</strong>, considerando a janela <strong>${windowLabel}</strong>, ${terr} registrou <strong>${U().formatBRLFull(summary.valor)}</strong> em financiamentos, distribuídos em <strong>${U().formatNumber(summary.contratos)}</strong> contratos e <strong>${U().formatNumber(summary.beneficiarios)}</strong> beneficiários. As atividades classificadas como vinculadas à Amazônia Azul responderam por <strong>${U().formatPercent(summary.shareAzulValor)}</strong> do valor contratado. A participação feminina foi de <strong>${U().formatPercent(summary.shareMulheresValor)}</strong> no valor e de <strong>${U().formatPercent(summary.shareMulheresContratos)}</strong> nos contratos.`;
-    el('windowSummary').innerHTML = [
-      ['Valor médio por contrato', U().formatBRLFull(summary.ticketContrato || 0)],
-      ['Valor médio por beneficiário', U().formatBRLFull(summary.ticketBeneficiario || 0)],
-      ['Beneficiários por contrato', U().formatNumber(summary.beneficiariosPorContrato || 0, 2)],
-      ['Linhas agregadas analisadas', U().formatNumber(summary.n)]
-    ].map(([a,b]) => `<div class="mini-stat"><strong>${b}</strong><span>${a}</span></div>`).join('');
-  }
-
-  function activeTerritoryText(f) {
-    if (f.municipio !== '__all__') {
-      const r = state.rows.find(x => x.codMun === f.municipio);
-      return `o município de ${r ? `${r.municipio} (${r.uf})` : f.municipio}`;
-    }
-    if (f.uf !== '__all__') return `a UF ${f.uf}`;
-    if (f.macro !== '__all__') return `a macrorregião ${f.macro}`;
-    return 'os municípios elegíveis ao Programa Amazônia Azul';
-  }
-
-  function windowLabelFromMonths(n) {
-    return ({ 1: 'mês', 3: 'trimestre', 6: 'semestre', 12: 'últimos 12 meses' })[Number(n)] || `${n} meses`;
-  }
-
-  function renderRankings({ f, current }) {
-    C().drawTreemapCnae(current, f.indicator);
-    C().drawTreemapTerritory(current, f.indicator);
-    C().drawRanking(current, f.rankingDimension, f.indicator, f.topN);
-  }
-
-  function renderScatter({ f, current }) {
-    C().drawScatterCnae(current, f.scatterColor);
-    C().drawBoxplot(current, f.boxGroup, f.indicator);
-  }
-
-  function renderMaps({ f, current, noTime }) {
-    M().drawMunicipalMap(current, noTime, f.month, f.indicator, f.mapMode, f.mapGrowthWindow, state.manifest);
-  }
-
-  function renderTable() {
-    const data = currentData();
-    const { f, current } = data;
-    const level = f.tableLevel;
-    const search = U().norm(el('tableSearch')?.value || '');
-    let rows = T().tableRows(current, level);
-    if (search) rows = rows.filter(r => U().norm(Object.values(r).join(' ')).includes(search));
-    if (state.tableSort.key) {
-      const { key, dir } = state.tableSort;
-      rows = rows.slice().sort((a, b) => compareValues(a[key], b[key]) * dir);
-    }
-    state.currentTableRows = rows;
-    drawTable(rows, level);
-  }
-
-  function compareValues(a, b) {
-    const na = Number(a), nb = Number(b);
-    if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb;
-    return String(a ?? '').localeCompare(String(b ?? ''), 'pt-BR');
-  }
-
-  function drawTable(rows, level) {
-    const table = el('analyticTable');
-    const limit = level === 'registro' ? 1000 : 2000;
-    const displayRows = rows.slice(0, limit);
-    el('tableInfo').innerHTML = `${U().formatNumber(rows.length)} linhas na seleção. ${rows.length > limit ? `Exibindo as primeiras ${U().formatNumber(limit)} linhas; a exportação inclui todas.` : 'A tabela exibida corresponde à seleção atual.'}`;
-    if (!displayRows.length) {
-      table.innerHTML = '<tbody><tr><td>Nenhuma linha agregada para os filtros selecionados.</td></tr></tbody>';
-      return;
-    }
-    const headers = Object.keys(displayRows[0]);
-    table.innerHTML = `<thead><tr>${headers.map(h => `<th data-key="${escapeHtml(h)}">${escapeHtml(h)}</th>`).join('')}</tr></thead><tbody>${displayRows.map(r => `<tr>${headers.map(h => `<td>${formatTableCell(r[h], h)}</td>`).join('')}</tr>`).join('')}</tbody>`;
-    table.querySelectorAll('th').forEach(th => {
-      th.addEventListener('click', () => {
-        const key = th.dataset.key;
-        if (state.tableSort.key === key) state.tableSort.dir *= -1;
-        else state.tableSort = { key, dir: 1 };
-        renderTable();
-      });
-    });
-  }
-
-  function formatTableCell(value, key) {
-    if (value === null || value === undefined) return '';
-    const lower = U().norm(key);
-    if (lower.includes('participacao')) return U().formatPercent(value);
-    if (lower.includes('valor')) return U().formatBRLFull(value);
-    if (['Beneficiários','Contratos'].includes(key)) return U().formatNumber(value);
-    return escapeHtml(value);
-  }
-
-  function escapeHtml(value) {
-    return String(value ?? '').replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
-  }
-
-  function exportTable() {
-    const rows = state.currentTableRows.length ? state.currentTableRows : T().tableRows(currentData().current, filters().tableLevel);
-    U().download(`tabela_amazonia_azul_${Date.now()}.csv`, U().toCsv(rows), 'text/csv;charset=utf-8');
-  }
-
-  function exportSelection() {
-    const rows = currentData().current.map(r => ({
-      fundo: r.fundo, ano_mes: r.anoMes, uf: r.uf, cod_mun: r.codMun, municipio: r.municipio,
-      macrorregiao: r.macro, tipologia_territorial: r.tipologiaTerritorial, atividade_amazonia_azul: r.atividadeAzul,
-      setor: r.setor, programa: r.programa, linha: r.linha, atividade: r.atividade, cnae: r.cnae, porte: r.porte,
-      finalidade: r.finalidade, beneficiarios: r.beneficiarios, contratos: r.contratos, valor: r.valor,
-      sexo: r.sexo, faixa_taxa_juros: r.taxaJurosFaixa, registros_agregados: r.registrosAgregados, instituicao: r.instituicao
-    }));
-    U().download(`selecao_amazonia_azul_${Date.now()}.csv`, U().toCsv(rows), 'text/csv;charset=utf-8');
-  }
-
-  function updateSelectionPill({ f, current }) {
-    const parts = [U().formatMonth(f.month), windowLabelFromMonths(f.months), U().LABELS[f.indicator] || f.indicator];
-    if (f.macro !== '__all__') parts.push(f.macro);
-    if (f.uf !== '__all__') parts.push(f.uf);
-    if (f.municipio !== '__all__') {
-      const r = state.rows.find(x => x.codMun === f.municipio);
-      parts.push(r ? r.municipio : f.municipio);
-    }
-    el('selectionPill').textContent = `${parts.join(' • ')} • ${U().formatNumber(current.length)} linhas agregadas`;
-  }
-
-  async function loadMethodology() {
-    try {
-      const res = await fetch('metodologia/metodologia.md');
-      if (!res.ok) throw new Error(`${res.status}`);
-      const md = await res.text();
-      el('methodologyContent').innerHTML = marked.parse(md);
-    } catch (err) {
-      el('methodologyContent').innerHTML = '<p>Não foi possível carregar <code>metodologia/metodologia.md</code>. O dashboard continua funcional, mas a aba de metodologia precisa do arquivo Markdown no repositório.</p>';
-    }
-  }
-
-  function showAlert(message, type = 'info') {
-    const container = el('alerts');
-    const div = document.createElement('div');
-    div.className = `alert ${type}`;
-    div.textContent = message;
-    container.appendChild(div);
-  }
-
-  function clearAlerts() {
-    el('alerts').innerHTML = '';
-  }
-
-  function el(id) { return document.getElementById(id); }
+  async function renderMethodology(){ try{ const txt=await fetch('metodologia/metodologia.md').then(r=>r.text()); $('methodologyContent').innerHTML=window.marked?marked.parse(txt):txt; }catch(e){ $('methodologyContent').textContent='Não foi possível carregar metodologia/metodologia.md'; } }
+  function render(){ const f=filters(); const baseAll=baseRows(f); const currAll=inWindow(baseAll,f); const prevAll=inWindow(baseAll,f,true); const currElig=currAll.filter(r=>r.elegivel); const prevElig=prevAll.filter(r=>r.elegivel); const sElig=derive(summarize(currElig),summarize(prevElig)); const sAll=summarize(currAll); renderCards(sElig,sAll); const gen=renderEligibleTotal(currAll); renderNarrative(sElig,sAll,gen); renderTrend(baseRows(f).filter(r=>r.elegivel),f); renderTerritory(f); renderRanking(currElig,prevElig); renderKeyIndicators(baseRows(f).filter(r=>r.elegivel),currElig,prevElig); renderTable(); if($('maps').classList.contains('active')) renderMap(); }
+  async function main(){ try{ await loadData(); initFilters(); await renderMethodology(); document.querySelectorAll('select').forEach(el=>el.addEventListener('change',()=>{ if(el.id==='filterUf'){ const uf=el.value; const rows=S.rows.filter(r=>r.elegivel && (uf===all || r.uf===uf)); const mun=$('filterMunicipio'); const old=mun.value; mun.innerHTML='<option value="__all__">Todos</option>'; [...new Map(rows.map(r=>[r.codMun,`${r.municipio} (${r.uf})`])).entries()].sort((a,b)=>a[1].localeCompare(b[1],'pt-BR')).forEach(([k,v])=>{ const o=document.createElement('option'); o.value=k; o.textContent=v; mun.appendChild(o); }); if([...mun.options].some(o=>o.value===old)) mun.value=old; } })); render(); $('loadingOverlay').style.display='none'; }catch(e){ console.error(e); $('loadingStep').textContent=e.message; $('alerts').innerHTML=`<div class="alert error">${e.message}</div>`; } }
+  main();
 })();

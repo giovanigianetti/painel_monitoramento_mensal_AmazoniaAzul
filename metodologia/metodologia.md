@@ -1,200 +1,145 @@
-# Metodologia
+# Metodologia do dashboard
 
-## 1. Objetivo do painel
+## Objetivo
 
-Este dashboard acompanha a execução mensal de financiamentos dos fundos constitucionais e de instrumentos de crédito associados ao Programa Amazônia Azul, considerando apenas os municípios elegíveis ao Programa.
+O dashboard monitora a execução mensal de financiamentos dos Fundos Constitucionais e instrumentos associados ao Programa Amazônia Azul, com foco em municípios elegíveis, atividades vinculadas ao Programa, participação feminina e evolução territorial da execução.
 
-O painel foi estruturado para uso público. Por isso, a versão publicada no GitHub Pages utiliza dados agregados e compactados, sem disponibilizar o Excel bruto de financiamentos.
+## Fontes de dados
 
-## 2. Fontes de dados
+A base inicial de operações corresponde ao arquivo do FNE com contratações de janeiro a março de 2026. O arquivo bruto não é publicado no dashboard. Ele é usado apenas localmente pelo script de pré-processamento para gerar arquivos públicos agregados e codificados.
 
-A construção da versão pública utiliza três conjuntos de dados:
+A tipologia territorial é extraída do arquivo `Tipologia Amazônia Azul (v5).xlsx`, utilizando o código do município, nome, UF e a coluna `Tipologia Amazônia Azul`.
 
-1. **Base financeira agregada**: arquivo JSON gerado a partir da base original dos fundos. Nesta versão inicial, a fonte é o arquivo FNE de janeiro a março de 2026, pré-processado antes da publicação.
-2. **Tipologia territorial Amazônia Azul**: arquivo JSON mínimo derivado da planilha `Tipologia Amazônia Azul (v5).xlsx`, preservando apenas código do município, nome, UF, macrorregião e tipologia territorial.
-3. **GeoJSON local**: arquivo `data/geo/municipios_amazonia_azul.geojson`, com centroides municipais dos municípios elegíveis.
+## Município elegível e atividade vinculada à Amazônia Azul
 
-## 3. Proteção da base bruta
+O dashboard diferencia duas dimensões:
 
-A base original de operações não é publicada no repositório. O arquivo público contém somente linhas agregadas por combinações de variáveis analíticas. Isso permite manter o painel leve, compatível com GitHub Pages e sem disponibilizar registros individuais para download.
+1. **Município elegível ao Programa Amazônia Azul**: município presente na base territorial de tipologia do Programa.
+2. **Atividade vinculada à Amazônia Azul**: variável `TIPOLOGIA AMAZÔNIA AZUL` da base de financiamentos, com valores `Sim` ou `Não`, indicando se a atividade financiada é classificada como vinculada ao Programa.
 
-A base agregada preserva as medidas necessárias ao monitoramento:
+Essa distinção é essencial: um município pode ser elegível, mas nem toda operação localizada nele necessariamente financia atividade vinculada à Amazônia Azul.
+
+## Dados públicos agregados
+
+A base bruta é transformada em `data/processed/operacoes_agregadas_publicas.json`. Esse arquivo contém apenas combinações agregadas por mês, território e dimensões analíticas. Os valores publicados são somas agregadas de:
 
 - valor contratado;
-- quantidade de beneficiários;
-- quantidade de contratos;
-- quantidade de registros originais agregados em cada linha compacta.
+- beneficiários;
+- contratos;
+- número de registros agregados.
 
-## 4. Universo territorial
+O arquivo é codificado por dicionários de categorias para reduzir tamanho e evitar a disponibilização da base original.
 
-O universo do painel é formado pelos municípios presentes na tipologia territorial do Programa Amazônia Azul.
+## Denominadores gerais
 
-O procedimento é:
+Diferentemente da primeira versão, o pré-processamento preserva agregações de municípios elegíveis e não elegíveis. Isso permite calcular:
 
-1. Ler a lista de municípios elegíveis da tipologia territorial.
-2. Padronizar o código IBGE municipal com sete dígitos.
-3. Manter apenas operações financeiras cujo município esteja presente nesse universo elegível.
-4. Associar cada operação à sua tipologia territorial.
-5. Agregar os registros antes da publicação.
+- participação dos municípios elegíveis no total geral da base;
+- participação das atividades vinculadas à Amazônia Azul no total geral da base;
+- participação das atividades vinculadas à Amazônia Azul dentro dos municípios elegíveis.
 
-## 5. Diferença entre atividade Amazônia Azul e tipologia territorial
-
-O painel diferencia duas variáveis conceitualmente distintas:
-
-| Variável | Origem | Interpretação |
-|---|---|---|
-| Atividade vinculada à Amazônia Azul | Base financeira original | Indica se a atividade/CNAE financiada foi classificada como vinculada ao Programa |
-| Tipologia territorial Amazônia Azul | Arquivo de tipologia territorial | Classifica a prioridade territorial do município elegível |
-
-Essa distinção evita confundir a natureza da operação financiada com a prioridade territorial do município.
-
-## 6. Agregação pública
-
-A base pública foi agregada por:
-
-- fundo;
-- mês de contratação;
-- UF;
-- município;
-- macrorregião geográfica;
-- tipologia PNDR;
-- tipologia territorial Amazônia Azul;
-- atividade vinculada à Amazônia Azul;
-- setor;
-- programa;
-- linha de financiamento;
-- atividade;
-- CNAE;
-- porte;
-- finalidade da operação;
-- natureza do contratante;
-- sexo;
-- instituição operadora;
-- faixa de taxa de juros.
-
-A taxa de juros é publicada em faixas, e não como valor individual de cada operação.
-
-## 7. Indicadores absolutos
-
-Os indicadores absolutos são calculados por soma simples dentro da seleção atual:
+As fórmulas centrais são:
 
 ```text
-Valor contratado = soma dos valores contratados
+Participação dos municípios elegíveis = indicador nos municípios elegíveis / indicador total da base
+```
+
+```text
+Participação das atividades Amazônia Azul no total geral = indicador em atividades Amazônia Azul / indicador total da base
+```
+
+```text
+Participação das atividades Amazônia Azul nos municípios elegíveis = indicador em atividades Amazônia Azul nos municípios elegíveis / indicador total nos municípios elegíveis
+```
+
+## Indicadores
+
+Os indicadores absolutos são calculados por soma:
+
+```text
+Valor contratado = soma do valor contratado
 Beneficiários = soma da quantidade de beneficiários
 Contratos = soma da quantidade de contratos
 ```
 
-## 8. Participação das atividades vinculadas à Amazônia Azul
-
-A participação das atividades vinculadas à Amazônia Azul é calculada dentro do universo de municípios elegíveis:
+Os indicadores de participação das atividades vinculadas à Amazônia Azul são:
 
 ```text
-Participação Amazônia Azul no valor =
-valor das operações classificadas como Amazônia Azul / valor total das operações nos municípios elegíveis
+% valor Amazônia Azul = valor das atividades Amazônia Azul / valor total
+% beneficiários Amazônia Azul = beneficiários das atividades Amazônia Azul / beneficiários totais
+% contratos Amazônia Azul = contratos das atividades Amazônia Azul / contratos totais
 ```
 
-A mesma lógica é aplicada para beneficiários e contratos.
-
-## 9. Participação feminina
-
-A participação feminina é calculada a partir das linhas classificadas como `Mulheres` no campo sexo:
+A participação feminina é calculada com registros identificados como sexo feminino no numerador. Pessoas jurídicas, registros sem informação de sexo ou categorias não informadas permanecem no denominador quando compõem o total da execução.
 
 ```text
-Participação feminina no valor =
-valor associado a mulheres / valor total da seleção
+% valor mulheres = valor contratado por mulheres / valor contratado total
+% beneficiários mulheres = beneficiários mulheres / beneficiários totais
+% contratos mulheres = contratos mulheres / contratos totais
 ```
 
-A mesma lógica é aplicada para beneficiários e contratos.
+## Janelas temporais
 
-Registros sem sexo informado, pessoas jurídicas ou situações não aplicáveis não entram no numerador feminino.
+O usuário seleciona um mês de referência e uma janela:
 
-## 10. Janelas temporais
+- mês;
+- trimestre;
+- semestre;
+- últimos 12 meses.
 
-O usuário seleciona um mês de referência. A partir dele, o dashboard calcula quatro janelas:
-
-- mês selecionado;
-- trimestre: mês selecionado e dois meses anteriores;
-- semestre: mês selecionado e cinco meses anteriores;
-- últimos 12 meses: mês selecionado e onze meses anteriores.
-
-## 11. Crescimento ou redução
-
-O crescimento é calculado comparando a janela selecionada com a janela imediatamente anterior de mesmo tamanho:
+A janela é construída como o mês selecionado e os meses anteriores necessários para completar o intervalo. A variação é calculada contra a janela imediatamente anterior de mesmo tamanho.
 
 ```text
 Crescimento = (indicador da janela atual - indicador da janela anterior) / indicador da janela anterior
 ```
 
-Se a janela anterior estiver incompleta ou sem valor, o painel exibe `N.D.`.
+Para participações, também é calculada a variação em pontos percentuais.
 
-## 12. Rankings e treemaps
+## Visão geral
 
-Os rankings e treemaps são recalculados conforme os filtros ativos e podem usar como medida principal:
+A Visão geral apresenta:
 
-- valor contratado;
-- beneficiários;
-- contratos.
+- totais nos municípios elegíveis;
+- valores absolutos das atividades vinculadas à Amazônia Azul;
+- participação dessas atividades no total dos municípios elegíveis;
+- participação dos municípios elegíveis no total geral da base;
+- participação das atividades vinculadas à Amazônia Azul no total geral;
+- evolução temporal separada para valor, beneficiários e contratos;
+- comparação territorial com Brasil, macrorregiões e território selecionado;
+- leitura automática da seleção atual.
 
-Os treemaps setoriais usam hierarquia:
+## Visão detalhada
 
-```text
-Setor > Atividade > CNAE
-```
+A aba Visão detalhada substitui os treemaps por rankings Top 10 e Bottom 10. As dimensões incluem setor, programa, linha de financiamento, atividade, CNAE, porte, finalidade, UF, município, macrorregião, tipologia territorial, instituição operadora, natureza do contratante e sexo.
 
-Os treemaps territoriais usam hierarquia:
+Os rankings podem ser ordenados por valores absolutos, participações das atividades Amazônia Azul, participação feminina e crescimento.
 
-```text
-Macrorregião > UF > Município
-```
+## Indicadores chave
 
-## 13. Dispersão e boxplot
+A aba Indicadores chave substitui a antiga aba de dispersão. Ela inclui:
 
-A dispersão CNAE relaciona:
+- participação por tipologia territorial da Amazônia Azul;
+- contagem de territórios que aumentaram em termos absolutos nas atividades vinculadas à Amazônia Azul;
+- contagem de territórios que aumentaram a participação relativa das atividades vinculadas à Amazônia Azul;
+- evolução das tipologias territoriais ao longo do tempo;
+- comparação entre território selecionado e benchmark territorial.
 
-- eixo X: quantidade de contratos;
-- eixo Y: valor contratado;
-- tamanho da bolha: beneficiários;
-- cor: dimensão selecionada.
+O benchmarking compara o território selecionado com Brasil, macrorregião, UF, município ou tipologia territorial em valores absolutos, diferenças relativas e pontos percentuais quando o indicador é percentual.
 
-O boxplot compara distribuições por grupos, como macrorregião, UF, tipologia territorial, setor, programa, porte ou finalidade.
+## Mapas
 
-## 14. Mapas
+A aba Mapas usa arquivos locais em `data/geo/`:
 
-A versão pública inclui um GeoJSON local com centroides municipais dos 757 municípios elegíveis.
+- `municipios_ibge_topo.json`;
+- `ufs_ibge_topo.json`;
+- `manifest_malhas.json`.
 
-O arquivo usado é:
+O carregador aceita GeoJSON ou TopoJSON. Para uso cartográfico oficial, esses arquivos podem ser substituídos pelos arquivos homônimos da pasta `maps/` do repositório PNDR_4. O mapa municipal apresenta os municípios elegíveis, com contorno estadual sobreposto.
 
-```text
-data/geo/municipios_amazonia_azul.geojson
-```
+## Tabela analítica
 
-O mapa exibe círculos proporcionais e coloridos por indicador. As cores representam intensidade, participação ou crescimento/redução, conforme a opção selecionada.
+A tabela analítica apresenta dados agregados e indicadores derivados, com alternância de nível de agregação. A exportação CSV exporta apenas a seleção agregada filtrada, nunca a base bruta.
 
-Caso seja necessário um mapa coroplético poligonal, o arquivo de pontos pode ser substituído por um GeoJSON municipal simplificado com polígonos. Para isso, a geometria deve conter código IBGE municipal de sete dígitos em uma das propriedades reconhecidas pelo dashboard, como `codigo_ibge` ou `CD_MUN`.
+## Limitações
 
-## 15. Tabela analítica
-
-A opção mais desagregada da tabela exibe linhas agregadas compactas, não registros individuais da base original.
-
-Essa decisão é necessária para:
-
-- manter o arquivo público abaixo do limite prático de tamanho;
-- evitar disponibilizar a base bruta;
-- preservar a capacidade de filtros, rankings e exportação da seleção agregada.
-
-## 16. Atualização mensal
-
-A atualização mensal deve ser feita fora do GitHub Pages:
-
-1. Manter os Excel brutos em ambiente local ou privado.
-2. Executar o script `scripts/preprocessar_dados.py`.
-3. Gerar novo arquivo JSON agregado em `data/processed/`.
-4. Atualizar `data/manifest.json`.
-5. Publicar apenas os arquivos processados.
-
-## 17. Limitações
-
-- A versão pública não permite reconstruir operações individuais do Excel original.
-- A taxa de juros é publicada em faixas.
-- O mapa local usa centroides municipais; não substitui uma malha poligonal oficial quando o objetivo for análise cartográfica fina de área.
-- Crescimentos de trimestre, semestre e 12 meses exigem série histórica suficiente; nos primeiros meses, alguns indicadores podem aparecer como indisponíveis.
+Os resultados medem execução financeira e distribuição de contratos/beneficiários. Eles não medem, isoladamente, efetividade, adicionalidade, impacto causal, permanência do investimento ou qualidade da implementação. A participação feminina depende da qualidade do preenchimento da variável sexo. As comparações de crescimento exigem base anterior suficiente; quando o denominador é nulo ou inexistente, o indicador é apresentado como não disponível.
