@@ -148,21 +148,32 @@ const Charts = (() => {
   }
   function scatter(id, x, y, title, opts={}){
     const xx=normalize(x), yy=normalize(y);
-    const points = xx.map((vx,i)=>({x:vx, y:yy[i], custom:(opts.customdata||[])[i], color:(opts.colors||[])[i]}))
-      .filter(p => Number.isFinite(p.x) && Number.isFinite(p.y));
+    const hasText = Array.isArray(opts.text) && opts.text.some(v => String(v || '').trim() !== '');
+    const points = xx.map((vx,i)=>({
+      x:vx, y:yy[i], custom:(opts.customdata||[])[i], color:(opts.colors||[])[i],
+      text:hasText ? (opts.text||[])[i] : ''
+    })).filter(p => Number.isFinite(p.x) && Number.isFinite(p.y));
     if(!points.length){ clear(id); return; }
+    const xAxis = {title:{text:opts.xTitle||'',font:{size:12}},automargin:true,tickformat:opts.xTickformat||'',zeroline:true,zerolinecolor:'#8fa1ad',fixedrange:true};
+    const yAxis = {title:{text:opts.yTitle||'',font:{size:12}},automargin:true,tickformat:opts.yTickformat||'',zeroline:true,zerolinecolor:'#8fa1ad',fixedrange:true};
+    if(opts.xRange) xAxis.range = opts.xRange; else xAxis.rangemode = 'tozero';
+    if(opts.yRange) yAxis.range = opts.yRange;
     react(id, [{
       type:'scatter',
-      mode:'markers',
+      mode:hasText ? 'markers+text' : 'markers',
       x:points.map(p=>p.x),
       y:points.map(p=>p.y),
       customdata:points.map(p=>p.custom),
+      text:hasText ? points.map(p=>p.text || '') : undefined,
+      textposition:opts.textposition || 'top center',
+      textfont:{size:10,color:'#334155'},
+      cliponaxis:false,
       marker:{size:9,opacity:.78,color:points.map(p=>p.color||COLORS.blue),line:{color:'white',width:.8}},
       hovertemplate:opts.hovertemplate || '%{customdata}<br>x: %{x:,.1f}<br>y: %{y:.1%}<extra></extra>'
     }], commonLayout(title, {
       margin:opts.margin || {l:80,r:34,t:52,b:78},
-      xaxis:{title:{text:opts.xTitle||'',font:{size:12}},automargin:true,tickformat:opts.xTickformat||'',rangemode:'tozero',zeroline:true,zerolinecolor:'#8fa1ad',fixedrange:true},
-      yaxis:{title:{text:opts.yTitle||'',font:{size:12}},automargin:true,tickformat:opts.yTickformat||'',zeroline:true,zerolinecolor:'#8fa1ad',fixedrange:true},
+      xaxis:xAxis,
+      yaxis:yAxis,
       showlegend:false
     }));
   }

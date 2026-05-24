@@ -270,53 +270,110 @@ const App = (() => {
   }
   const growthLevelLabels = {cod_mun:'Município', uf:'UF', macrorregiao_geografica:'Macrorregião', tipologia_territorial_amazonia_azul:'Tipologia territorial Amazônia Azul'};
   const growthIndicatorLabels = {valor_azul:'Valor contratado em atividades Amazônia Azul', contratos_azul:'Contratos em atividades Amazônia Azul', beneficiarios_azul:'Beneficiários em atividades Amazônia Azul'};
+  function cleanTerritoryLabel(value){
+    return String(value ?? '')
+      .replace(/<\/?strong>/gi, '')
+      .replace(/<[^>]+>/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+  function percentile(values, p){
+    const arr=(values||[]).filter(Number.isFinite).sort((a,b)=>a-b);
+    if(!arr.length) return null;
+    if(arr.length===1) return arr[0];
+    const pos=(arr.length-1)*p, base=Math.floor(pos), rest=pos-base;
+    return arr[base] + ((arr[base+1] ?? arr[base]) - arr[base]) * rest;
+  }
+  function paddedRange(min, max){
+    if(!Number.isFinite(min) || !Number.isFinite(max)) return null;
+    if(min===max){ const pad=Math.abs(max || 1)*0.08; return [min-pad, max+pad]; }
+    const pad=(max-min)*0.04;
+    return [min-pad, max+pad];
+  }
+  function classifyGrowthRow(cur, prev, delta, previousComplete){
+    const eps = 1e-9;
+    if(Math.abs(delta) <= eps) return {status:'Zero', rate:null};
+    if(!previousComplete || prev===0) return {status:'Sem base anterior', rate:null};
+    return {status: delta > 0 ? 'Aumentou' : 'Reduziu', rate: delta / prev};
+  }
+  function growthRowsForFilters(filters, level, indicator, current, previous, previousComplete){
+    return Transforms.comparePeriodsBy(state, filters, level, current, previous)
+      .map(d=>{
+        const rawLabel = level==='cod_mun' ? (state.munLabel.get(d.key)||d.key) : d.key;
+        const label = cleanTerritoryLabel(rawLabel);
+        const cur=Transforms.derived(d.current, indicator)||0;
+        const prev=Transforms.derived(d.previous, indicator)||0;
+        const delta=cur-prev;
+        const cls=classifyGrowthRow(cur, prev, delta, previousComplete);
+        return {label, cur, prev, delta, rate:cls.rate, status:cls.status};
+      })
+      .filter(d=>d.label && String(d.label).trim()!=='' && d.label!=='Não informado' && d.label!=='Não elegível');
+  }
   function renderGrowthLocations(){
     const level=document.getElementById('growthLevel')?.value || 'uf';
     const indicator=document.getElementById('growthIndicator')?.value || 'valor_azul';
     const {current,previous,previousComplete}=windowInfo();
     const filters=currentFilters();
-    const rows=Transforms.comparePeriodsBy(state, filters, level, current, previous)
-      .map(d=>{
-        const label = level==='cod_mun' ? (state.munLabel.get(d.key)||d.key) : d.key;
-        const cur=Transforms.derived(d.current, indicator)||0;
-        const prev=Transforms.derived(d.previous, indicator)||0;
-        const delta=cur-prev;
-        let status='Estável', rate=null;
-        if(!previousComplete || prev===0){
-          status = delta===0 && previousComplete ? 'Estável' : 'Sem base anterior';
-        } else {
-          rate = delta / prev;
-          if(delta>0) status='Aumentou';
-          else if(delta<0) status='Reduziu';
-        }
-        return {label, cur, prev, delta, rate, status};
-      })
-      .filter(d=>d.label && String(d.label).trim()!=='' && d.label!=='Não informado');
-    const counts = {Aumentou:0, Reduziu:0, Estável:0, 'Sem base anterior':0};
-    rows.forEach(r=>{ counts[r.status]=(counts[r.status]||0)+1; });
+    const rows=growthRowsForFilters(filters, level, indicator, current, previous, previousComplete);
+    const eligibleZeroRows=growthRowsForFilters({...filters,elegivel_amazonia_azul:'Sim'}, level, indicator, current, previous, previousComplete)
+      .filter(r=>r.status==='Zero');
+    const counts = {Aumentou:0, Reduziu:0, 'Sem base anterior':0};
+    rows.forEach(r=>{ if(r.status==='Aumentou' || r.status==='Reduziu' || r.status==='Sem base anterior') counts[r.status]=(counts[r.status]||0)+1; });
     document.getElementById('growthCards').innerHTML = [
       Utils.makeCard('Aumentou', Utils.formatNumber(counts.Aumentou), growthIndicatorLabels[indicator]),
       Utils.makeCard('Reduziu', Utils.formatNumber(counts.Reduziu), growthIndicatorLabels[indicator]),
-      Utils.makeCard('Estável', Utils.formatNumber(counts.Estável), growthLevelLabels[level]),
+      Utils.makeCard('Zeros', Utils.formatNumber(eligibleZeroRows.length), `${growthLevelLabels[level]} elegíveis sem variação`),
       Utils.makeCard('Sem base anterior', Utils.formatNumber(counts['Sem base anterior']), 'Janela anterior insuficiente ou denominador zero')
     ].join('');
-    const plotRows = rows.filter(r => Number.isFinite(r.cur) && Number.isFinite(r.rate));
+
+    const plotRows = rows.filter(r => r.status!=='Zero' && Number.isFinite(r.cur) && Number.isFinite(r.rate));
     const xFormatter = indicator.includes('valor') ? Utils.formatBRL : Utils.formatNumber;
-    const customdata = plotRows.map(r => [
+    if(!plotRows.length){
+      Charts.clear('chart_growth_dots', 'Não há dados disponíveis para a seleção atual');
+      return;
+    }
+    const xP95 = percentile(plotRows.map(r=>r.cur), 0.95);
+    const positiveRates = plotRows.map(r=>r.rate).filter(v=>Number.isFinite(v) && v>=0);
+    const negativeRates = plotRows.map(r=>r.rate).filter(v=>Number.isFinite(v) && v<0);
+    const yUpper = percentile(positiveRates.length ? positiveRates : plotRows.map(r=>r.rate), 0.95);
+    const yLower = negativeRates.length ? percentile(negativeRates, 0.05) : Math.min(0, ...plotRows.map(r=>r.rate));
+    const xCap = Number.isFinite(xP95) ? xP95 : Math.max(...plotRows.map(r=>r.cur));
+    const yCapHi = Number.isFinite(yUpper) ? yUpper : Math.max(...plotRows.map(r=>r.rate));
+    const yCapLo = Number.isFinite(yLower) ? yLower : Math.min(...plotRows.map(r=>r.rate));
+    const plotX = plotRows.map(r => Number.isFinite(xCap) ? Math.min(r.cur, xCap) : r.cur);
+    const plotY = plotRows.map(r => {
+      let v = r.rate;
+      if(Number.isFinite(yCapHi)) v = Math.min(v, yCapHi);
+      if(Number.isFinite(yCapLo)) v = Math.max(v, yCapLo);
+      return v;
+    });
+    const labelText = plotRows.map((r,i)=>{
+      const cappedX = Number.isFinite(xCap) && r.cur > xCap;
+      const cappedY = (Number.isFinite(yCapHi) && r.rate > yCapHi) || (Number.isFinite(yCapLo) && r.rate < yCapLo);
+      return (cappedX || cappedY) ? `${xFormatter(r.cur)} | ${Utils.formatPercent(r.rate)}` : '';
+    });
+    const customdata = plotRows.map((r,i) => [
       r.label,
       xFormatter(r.cur),
       Utils.formatPercent(r.rate),
       r.status,
-      Utils.formatBRL ? (indicator.includes('valor') ? Utils.formatBRL(r.delta) : Utils.formatNumber(r.delta)) : r.delta
+      indicator.includes('valor') ? Utils.formatBRL(r.delta) : Utils.formatNumber(r.delta),
+      (plotX[i] !== r.cur || plotY[i] !== r.rate) ? 'Sim' : 'Não'
     ]);
-    Charts.scatter('chart_growth_dots', plotRows.map(r=>r.cur), plotRows.map(r=>r.rate), `Dispersão — ${growthIndicatorLabels[indicator]} por ${growthLevelLabels[level]}`, {
+    const xMax = Number.isFinite(xCap) && xCap>0 ? xCap*1.04 : Math.max(...plotX, 1);
+    const yRangeBase = paddedRange(Math.min(0, ...plotY), Math.max(0, ...plotY));
+    Charts.scatter('chart_growth_dots', plotX, plotY, `Dispersão — ${growthIndicatorLabels[indicator]} por ${growthLevelLabels[level]}`, {
       xTitle:'Valor absoluto do indicador na janela atual',
       yTitle:'Taxa de variação frente à janela anterior',
       xTickformat: indicator.includes('valor') ? ',.1f' : ',.1f',
       yTickformat:'.1%',
+      xRange:[0, xMax],
+      yRange:yRangeBase,
+      text:labelText,
+      textposition:'top center',
       customdata,
       colors: plotRows.map(r => r.status==='Aumentou' ? '#238b45' : r.status==='Reduziu' ? '#b91c1c' : '#94a3b8'),
-      hovertemplate:'<strong>%{customdata[0]}</strong><br>Valor absoluto: %{customdata[1]}<br>Taxa de variação: %{customdata[2]}<br>Variação absoluta: %{customdata[4]}<br>Classificação: %{customdata[3]}<extra></extra>'
+      hovertemplate:'%{customdata[0]}<br>Valor absoluto: %{customdata[1]}<br>Taxa de variação: %{customdata[2]}<br>Variação absoluta: %{customdata[4]}<br>Classificação: %{customdata[3]}<br>Posicionado no limite do P95: %{customdata[5]}<extra></extra>'
     });
   }
   function renderIndicators(){ renderIndicatorKeys(); renderGrowthLocations(); renderTipologyParticipation(); renderBenchmark(); resizeSoon(); }
