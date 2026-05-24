@@ -143,3 +143,8 @@ A tabela analítica apresenta dados agregados e indicadores derivados, com alter
 ## Limitações
 
 Os resultados medem execução financeira e distribuição de contratos/beneficiários. Eles não medem, isoladamente, efetividade, adicionalidade, impacto causal, permanência do investimento ou qualidade da implementação. A participação feminina depende da qualidade do preenchimento da variável sexo. As comparações de crescimento exigem base anterior suficiente; quando o denominador é nulo ou inexistente, o indicador é apresentado como não disponível.
+
+
+## Ajuste de performance
+
+Nesta versão, a tabela analítica foi removida da interface para reduzir a carga de renderização no navegador. Os indicadores continuam sendo calculados a partir de dados públicos agregados, sem publicação da base bruta ou de registros individuais.

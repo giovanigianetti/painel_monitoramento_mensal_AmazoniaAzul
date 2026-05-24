@@ -42,7 +42,12 @@
     setLoading('Carregando dados agregados codificados');
     const files=S.manifest.agregados || [];
     const allRows=[];
-    for(const f of files){ const payload=await json(f.arquivo); allRows.push(...decodePayload(payload)); }
+    for(const f of files){
+      const payload=await json(f.arquivo);
+      const decoded=decodePayload(payload);
+      // Evita Maximum call stack size exceeded em navegadores: não usar push(...array) com dezenas/centenas de milhares de linhas.
+      for(let i=0;i<decoded.length;i++) allRows.push(decoded[i]);
+    }
     S.rows=allRows;
     setLoading(`${S.rows.length.toLocaleString('pt-BR')} linhas públicas agregadas carregadas`);
   }
@@ -68,9 +73,11 @@
     // custom municipio select with code values
     const mun=$('filterMunicipio'); mun.innerHTML='<option value="__all__">Todos</option>'; [...new Map(S.rows.filter(r=>r.elegivel).map(r=>[r.codMun,`${r.municipio} (${r.uf})`])).entries()].sort((a,b)=>a[1].localeCompare(b[1],'pt-BR')).forEach(([k,v])=>{ const o=document.createElement('option'); o.value=k; o.textContent=v; mun.appendChild(o); });
     fillSelect('filterTipologia',[...new Set(S.rows.filter(r=>r.elegivel).map(r=>r.tipologiaTerritorial))],'Todas'); fillSelect('filterSetor',[...new Set(S.rows.map(r=>r.setor))],'Todos'); fillSelect('filterPrograma',[...new Set(S.rows.map(r=>r.programa))],'Todos'); fillSelect('filterLinha',[...new Set(S.rows.map(r=>r.linha))],'Todas'); fillSelect('filterAtividade',[...new Set(S.rows.map(r=>r.atividade))],'Todas'); fillSelect('filterCnae',[...new Set(S.rows.map(r=>r.cnae))],'Todas'); fillSelect('filterPorte',[...new Set(S.rows.map(r=>r.porte))],'Todos'); fillSelect('filterFinalidade',[...new Set(S.rows.map(r=>r.finalidade))],'Todas'); fillSelect('filterPfPj',[...new Set(S.rows.map(r=>r.pfPj))],'Todas'); fillSelect('filterSexo',[...new Set(S.rows.map(r=>r.sexo))],'Todos'); fillSelect('filterInstituicao',[...new Set(S.rows.map(r=>r.instituicao))],'Todas');
-    fillStaticSelect('rankingDimension', dimOptions); fillStaticSelect('rankingMetric', rankingMetrics); fillStaticSelect('tableLevel', tableLevels);
+    fillStaticSelect('rankingDimension', dimOptions); fillStaticSelect('rankingMetric', rankingMetrics);
     populateBench();
-    [...document.querySelectorAll('select,input')].forEach(el=>el.addEventListener('change',render)); $('btnRefresh').onclick=render; $('clearFilters').onclick=clearFilters; $('downloadTable').onclick=()=>downloadCSV(S.currentTable,'tabela_analitica_amazul.csv'); $('btnExportSelection').onclick=()=>downloadCSV(S.currentTable,'selecao_atual_amazul.csv'); $('tableSearch').addEventListener('input',renderTable);
+    [...document.querySelectorAll('select,input')].forEach(el=>el.addEventListener('change',render));
+    if($('btnRefresh')) $('btnRefresh').onclick=render;
+    if($('clearFilters')) $('clearFilters').onclick=clearFilters;
     document.querySelectorAll('.tab-button').forEach(b=>b.addEventListener('click',()=>{ document.querySelectorAll('.tab-button').forEach(x=>x.classList.remove('active')); document.querySelectorAll('.tab-panel').forEach(x=>x.classList.remove('active')); b.classList.add('active'); $(b.dataset.tab).classList.add('active'); if(b.dataset.tab==='maps') setTimeout(renderMap,100); }));
   }
   function populateBench(){ const opts=[['brasil','Brasil']]; ['Norte','Nordeste','Centro-Oeste','Sudeste','Sul'].forEach(x=>opts.push([`macro:${x}`,x])); [...new Set(S.rows.map(r=>r.uf))].sort().forEach(x=>opts.push([`uf:${x}`,`UF ${x}`])); [...new Map(S.rows.filter(r=>r.elegivel).map(r=>[r.codMun,`${r.municipio} (${r.uf})`])).entries()].sort((a,b)=>a[1].localeCompare(b[1],'pt-BR')).forEach(([k,v])=>opts.push([`mun:${k}`,v])); [...new Set(S.rows.filter(r=>r.elegivel).map(r=>r.tipologiaTerritorial))].sort().forEach(x=>opts.push([`tip:${x}`,`Tipologia ${x}`])); fillStaticSelect('benchMain',opts); fillStaticSelect('benchRef',opts); $('benchRef').value='brasil'; }
@@ -118,7 +125,7 @@
   async function loadGeo(url){ const g=await json(url); if(g.type==='Topology' && window.topojson){ const key=Object.keys(g.objects)[0]; return topojson.feature(g,g.objects[key]); } return g; }
 
   async function renderMethodology(){ try{ const txt=await fetch('metodologia/metodologia.md').then(r=>r.text()); $('methodologyContent').innerHTML=window.marked?marked.parse(txt):txt; }catch(e){ $('methodologyContent').textContent='Não foi possível carregar metodologia/metodologia.md'; } }
-  function render(){ const f=filters(); const baseAll=baseRows(f); const currAll=inWindow(baseAll,f); const prevAll=inWindow(baseAll,f,true); const currElig=currAll.filter(r=>r.elegivel); const prevElig=prevAll.filter(r=>r.elegivel); const sElig=derive(summarize(currElig),summarize(prevElig)); const sAll=summarize(currAll); renderCards(sElig,sAll); const gen=renderEligibleTotal(currAll); renderNarrative(sElig,sAll,gen); renderTrend(baseRows(f).filter(r=>r.elegivel),f); renderTerritory(f); renderRanking(currElig,prevElig); renderKeyIndicators(baseRows(f).filter(r=>r.elegivel),currElig,prevElig); renderTable(); if($('maps').classList.contains('active')) renderMap(); }
+  function render(){ const f=filters(); const baseAll=baseRows(f); const currAll=inWindow(baseAll,f); const prevAll=inWindow(baseAll,f,true); const currElig=currAll.filter(r=>r.elegivel); const prevElig=prevAll.filter(r=>r.elegivel); const sElig=derive(summarize(currElig),summarize(prevElig)); const sAll=summarize(currAll); renderCards(sElig,sAll); const gen=renderEligibleTotal(currAll); renderNarrative(sElig,sAll,gen); renderTrend(baseRows(f).filter(r=>r.elegivel),f); renderTerritory(f); renderRanking(currElig,prevElig); renderKeyIndicators(baseRows(f).filter(r=>r.elegivel),currElig,prevElig); if($('maps').classList.contains('active')) renderMap(); }
   async function main(){ try{ await loadData(); initFilters(); await renderMethodology(); document.querySelectorAll('select').forEach(el=>el.addEventListener('change',()=>{ if(el.id==='filterUf'){ const uf=el.value; const rows=S.rows.filter(r=>r.elegivel && (uf===all || r.uf===uf)); const mun=$('filterMunicipio'); const old=mun.value; mun.innerHTML='<option value="__all__">Todos</option>'; [...new Map(rows.map(r=>[r.codMun,`${r.municipio} (${r.uf})`])).entries()].sort((a,b)=>a[1].localeCompare(b[1],'pt-BR')).forEach(([k,v])=>{ const o=document.createElement('option'); o.value=k; o.textContent=v; mun.appendChild(o); }); if([...mun.options].some(o=>o.value===old)) mun.value=old; } })); render(); $('loadingOverlay').style.display='none'; }catch(e){ console.error(e); $('loadingStep').textContent=e.message; $('alerts').innerHTML=`<div class="alert error">${e.message}</div>`; } }
   main();
 })();

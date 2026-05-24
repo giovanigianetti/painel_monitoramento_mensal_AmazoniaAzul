@@ -20,7 +20,7 @@
       <h1>Monitoramento da execução de financiamentos</h1>
       <p class="subtitle">Painel público para acompanhamento mensal de valores contratados, beneficiários, contratos, participação das atividades vinculadas à Amazônia Azul e participação feminina.</p>
     </div>
-    <div class="topbar-actions"><button id="btnRefresh" class="btn btn-primary">Recalcular</button><button id="btnExportSelection" class="btn btn-ghost">Exportar seleção CSV</button></div>
+    <div class="topbar-actions"><button id="btnRefresh" class="btn btn-primary">Recalcular</button></div>
   </header>
   <main class="layout">
     <aside class="sidebar" aria-label="Filtros do dashboard">
@@ -56,7 +56,6 @@
         <button class="tab-button" data-tab="detailed">Visão detalhada</button>
         <button class="tab-button" data-tab="keyindicators">Indicadores chave</button>
         <button class="tab-button" data-tab="maps">Mapas</button>
-        <button class="tab-button" data-tab="table">Tabela analítica</button>
         <button class="tab-button" data-tab="methodology">Metodologia</button>
       </nav>
       <section id="alerts" class="alerts" aria-live="polite"></section>
@@ -82,10 +81,6 @@
       <section id="maps" class="tab-panel">
         <div class="section-heading"><div><p class="eyebrow">Mapas</p><h2>Distribuição municipal da execução</h2></div><div class="inline-controls"><label>Indicador<select id="mapIndicator"><option value="valor">Valor contratado</option><option value="beneficiarios">Beneficiários</option><option value="contratos">Contratos</option><option value="shareAzulValor">% valor Amazônia Azul</option><option value="shareMulheresValor">% valor mulheres</option><option value="growthValor">Crescimento do valor</option></select></label><button id="resetMap" class="btn btn-ghost">Resetar mapa</button></div></div>
         <article class="panel"><div id="map" class="map"></div><div id="mapLegend" class="legend"></div></article>
-      </section>
-      <section id="table" class="tab-panel">
-        <div class="section-heading"><div><p class="eyebrow">Tabela analítica</p><h2>Dados agregados e indicadores derivados</h2></div><div class="inline-controls"><label>Nível<select id="tableLevel"></select></label><label>Busca<input id="tableSearch" type="search" placeholder="Filtrar tabela…" /></label><button id="downloadTable" class="btn btn-primary">Exportar CSV</button></div></div>
-        <article class="panel table-panel"><div id="tableInfo" class="table-info"></div><div class="table-wrapper"><table id="analyticTable"></table></div></article>
       </section>
       <section id="methodology" class="tab-panel"><div class="section-heading"><div><p class="eyebrow">Metodologia</p><h2>Procedimentos, variáveis e limitações</h2></div></div><article id="methodologyContent" class="panel prose">Carregando metodologia…</article></section>
     </section>
