@@ -1,5 +1,5 @@
 const MapController = (() => {
-  let map, muniLayer, ufLayer, legend;
+  let map, muniLayer, ufLayer, legend, geoCache = {}; 
   const seq = ['#d7eff9','#9dd5ea','#4fa4ca','#176b93'];
   const neg = ['#fee2c5','#f59e0b','#dc6b19','#b91c1c'];
   function codeFromProps(props){
@@ -8,16 +8,23 @@ const MapController = (() => {
   }
   function ufCodeFromProps(props){ return props?.SIGLA_UF || props?.sigla || props?.UF || props?.NM_UF || ''; }
   async function loadGeoJSON(kind){
+    if(geoCache[kind]) return geoCache[kind];
     const manifest = await DataLoader.getJSON('data/geo/manifest_malhas.json');
     const local = kind==='municipios' ? 'data/geo/municipios_ibge_topo.json' : 'data/geo/ufs_ibge_topo.json';
+    let geo;
     try{
       const topo = await DataLoader.getJSON(local);
       const objectName = Object.keys(topo.objects)[0];
-      return topojson.feature(topo, topo.objects[objectName]);
+      geo = topojson.feature(topo, topo.objects[objectName]);
     }catch(e){
       const remote = manifest.maps.remote_fallback[kind];
-      return DataLoader.getJSON(remote);
+      geo = await DataLoader.getJSON(remote);
     }
+    if(geo && geo.features){
+      geo.features = geo.features.map(f=>({type:'Feature',properties:f.properties,geometry:f.geometry}));
+    }
+    geoCache[kind]=geo;
+    return geo;
   }
   function init(){
     if(map) return;
@@ -72,7 +79,8 @@ const MapController = (() => {
     else { div.innerHTML = `<strong>Variação</strong><br><i style="background:${neg[3]}"></i>Queda forte<br><i style="background:${neg[1]}"></i>Queda baixa/moderada<br><i style="background:#cbd5e1"></i>Estável<br><i style="background:${seq[1]}"></i>Crescimento baixo/moderado<br><i style="background:${seq[3]}"></i>Crescimento forte<br><i style="background:#e5e7eb"></i>Sem dado`; }
   }
   async function render(state){
-    init(); document.getElementById('mapStatus').textContent='Carregando malhas municipais...';
+    init(); document.getElementById('mapStatus').textContent='Carregando ou atualizando mapa...';
+    setTimeout(()=>{ if(map) map.invalidateSize(); }, 60);
     const [{data, metric, previousComplete}, muniGeo, ufGeo] = await Promise.all([Promise.resolve(computeMapData(state)), loadGeoJSON('municipios'), loadGeoJSON('ufs')]);
     const cls=classify(metric, data); updateLegend(cls);
     if(muniLayer) muniLayer.remove(); if(ufLayer) ufLayer.remove();
@@ -82,7 +90,8 @@ const MapController = (() => {
       layer.bindTooltip(`<strong>${m.nome_mun||feature.properties?.nome||'Município'}</strong><br>UF: ${m.uf||''}<br>Macrorregião: ${m.macrorregiao_geografica||''}<br>Tipologia territorial: ${m.tipologia_territorial_amazonia_azul||'—'}<br>Elegível ao Programa: ${m.elegivel_amazonia_azul||'—'}<br>Valor contratado: ${Utils.formatBRLFull(a.valor)}<br>Beneficiários: ${Utils.formatNumber(a.beneficiarios)}<br>Contratos: ${Utils.formatNumber(a.contratos)}<br>Participação Amazônia Azul: ${Utils.formatPercent(Utils.pct(a.valor_azul,a.valor))}<br>Participação feminina: ${Utils.formatPercent(Utils.pct(a.valor_mulheres,a.valor))}<br>Indicador do mapa: ${valtxt}<br>Classe: ${classLabel(d,cls)}`);
     }}).addTo(map);
     ufLayer = L.geoJSON(ufGeo, {style:{color:'#1f2937',weight:1.2,fillOpacity:0,interactive:false}}).addTo(map);
-    try{ map.fitBounds(muniLayer.getBounds(), {padding:[8,8]}); }catch(e){}
+    try{ if(!state.mapLoaded) map.fitBounds(muniLayer.getBounds(), {padding:[8,8]}); }catch(e){}
+    setTimeout(()=>{ if(map) map.invalidateSize(); }, 120);
     document.getElementById('mapStatus').textContent = previousComplete || !(metric.startsWith('var_')||metric.startsWith('growth_')) ? 'Mapa carregado.' : 'Mapa carregado; variações dependem de janela anterior completa e podem aparecer como sem dado.';
   }
   function reset(){ if(map && muniLayer) map.fitBounds(muniLayer.getBounds(), {padding:[8,8]}); }

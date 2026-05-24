@@ -102,11 +102,12 @@ const App = (() => {
   }
   function renderRankings(){
     const dim=document.getElementById('rankDimension').value, ind=document.getElementById('rankIndicator').value; const {current,previous}=windowInfo(); const filters=currentFilters();
-    const comps=Transforms.comparePeriodsBy(state, filters, dim, current, previous).map(d=>({label: dim==='cod_mun'?(state.munLabel.get(d.key)||d.key):d.key, value:rankValue(ind,d.current,d.previous)})).filter(d=>d.value!==null && d.value!==undefined && !Number.isNaN(d.value) && String(d.label).trim()!=='' && d.label!=='Não informado');
-    const top=comps.slice().sort((a,b)=>b.value-a.value).slice(0,10).reverse(); const bottom=comps.slice().filter(d=>d.value!==0).sort((a,b)=>a.value-b.value).slice(0,10).reverse();
+    const comps=Transforms.comparePeriodsBy(state, filters, dim, current, previous)
+      .map(d=>({label: dim==='cod_mun'?(state.munLabel.get(d.key)||d.key):d.key, value:rankValue(ind,d.current,d.previous)}))
+      .filter(d=>d.value!==null && d.value!==undefined && !Number.isNaN(d.value) && String(d.label).trim()!=='' && d.label!=='Não informado');
+    const top=comps.slice().sort((a,b)=>b.value-a.value).slice(0,10).reverse();
     const tick = ind.includes('share')||ind.includes('pct_growth') ? '.0%' : '';
-    Charts.hbar('chart_rank_top', top.map(d=>d.label), top.map(d=>d.value), `Top 10 — ${rankIndicators[ind]}`, {tickformat:tick,color:'#176b93'});
-    Charts.hbar('chart_rank_bottom', bottom.map(d=>d.label), bottom.map(d=>d.value), `Bottom 10 — ${rankIndicators[ind]}`, {tickformat:tick,color:'#d97706'});
+    Charts.hbar('chart_rank_top', top.map(d=>d.label), top.map(d=>d.value), `Top 10 — ${rankIndicators[ind]}`, {tickformat:tick,color:'#176b93',truncate:58});
   }
   function renderTipologyParticipation(){
     const mode=document.getElementById('tipologyMode').value; const {current}=windowInfo(); const map=Transforms.aggregateBy(state, idxFor(currentFilters(),current), 'tipologia_territorial_amazonia_azul'); const labels=[...map.keys()].filter(k=>k!=='Não elegível').sort(); const total=Transforms.aggregateIndices(state, idxFor(currentFilters(),current));
@@ -115,6 +116,15 @@ const App = (() => {
       Charts.bar('chart_tip_'+metric, labels, vals, `${Utils.metricLabel(metric)} por tipologia`, {tickformat:mode==='abs'?'':'.0%'});
     }
   }
+  function renderAzulStacked(){
+    const {current}=windowInfo(); const total=agg(currentFilters(), current);
+    const metrics=[['valor','Valor contratado'],['contratos','Contratos'],['beneficiarios','Beneficiários']];
+    for(const [metric,label] of metrics){
+      const share=Utils.pct(total[metric+'_azul'], total[metric]);
+      Charts.stackedPercent('chart_stack_'+metric, label, share, `${label}: participação vinculada à Amazônia Azul`);
+    }
+  }
+
   function renderIncrease(){
     const lvl=document.getElementById('increaseLevel').value, metric=document.getElementById('increaseMetric').value; const {current,previous,previousComplete}=windowInfo(); const filters={...currentFilters(),atividade_vinculada_amazonia_azul:'Sim'};
     const comps=Transforms.comparePeriodsBy(state, filters, lvl, current, previous); const counts={Aumentou:0,Reduziu:0,Estável:0,'Sem base anterior':0};
@@ -151,7 +161,7 @@ const App = (() => {
     document.getElementById('benchCards').innerHTML=[Utils.makeCard('Valor total — território',Utils.formatBRL(a.valor),'Comparação selecionada'),Utils.makeCard('Valor total — benchmark',Utils.formatBRL(b.valor),'Base comparativa'),Utils.makeCard('Part. Amazônia Azul — território',Utils.formatPercent(Utils.pct(a.valor_azul,a.valor)),'No valor contratado'),Utils.makeCard('Part. feminina — território',Utils.formatPercent(Utils.pct(a.valor_mulheres,a.valor)),'No valor contratado')].join('');
     Charts.groupedBar('chart_benchmark', ['Valor total','Valor Amazônia Azul','Contratos'], [{name:'Território',values:[a.valor,a.valor_azul,a.contratos],color:'#176b93'},{name:'Benchmark',values:[b.valor,b.valor_azul,b.contratos],color:'#16a6a3'}], 'Comparação sintética');
   }
-  function renderIndicators(){ renderTipologyParticipation(); renderIncrease(); renderEvoTipology(); renderBenchmark(); }
+  function renderIndicators(){ renderTipologyParticipation(); renderAzulStacked(); renderIncrease(); renderEvoTipology(); renderBenchmark(); }
   async function renderMethodology(){
     const el=document.getElementById('methodologyContent'); if(el.dataset.loaded) return;
     const r=await fetch('metodologia/metodologia.md'); const md=await r.text(); el.innerHTML=marked.parse(md); el.dataset.loaded='1';
@@ -163,6 +173,7 @@ const App = (() => {
     if(state.activeTab==='indicators') renderIndicators();
     if(state.activeTab==='maps') { MapController.render(state); state.mapLoaded=true; }
     if(state.activeTab==='methodology') renderMethodology();
+    setTimeout(()=>{ document.querySelectorAll('.plot').forEach(el=>{ if(window.Plotly && el.data) Plotly.Plots.resize(el); }); }, 80);
   }
   function initTabs(){ document.querySelectorAll('.tab').forEach(btn=>btn.addEventListener('click',()=>{ document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active')); document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active')); btn.classList.add('active'); document.getElementById(btn.dataset.tab).classList.add('active'); state.activeTab=btn.dataset.tab; renderActive(); })); }
   async function init(){

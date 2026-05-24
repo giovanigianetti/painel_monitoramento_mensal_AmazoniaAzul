@@ -29,14 +29,19 @@
         <button id="clearFilters" class="btn secondary">Limpar filtros</button>
       </div>
       <div class="filter-grid">
-        <label>Mês de referência<select id="f_mes"></select></label>
-        <label>Janela temporal<select id="f_janela"><option value="1">Mês</option><option value="3">Trimestre</option><option value="6">Semestre</option><option value="12">Últimos 12 meses</option></select></label>
-        <label>Fundo/instrumento<select id="f_fundo_origem"></select></label>
-        <label>Macrorregião geográfica<select id="f_macrorregiao_geografica"></select></label>
-        <label>UF<select id="f_uf"></select></label>
-        <label>Município<select id="f_cod_mun"></select></label>
-        <label>Tipologia territorial Amazônia Azul<select id="f_tipologia_territorial_amazonia_azul"></select></label>
-        <label>Atividade vinculada à Amazônia Azul<select id="f_atividade_vinculada_amazonia_azul"></select></label>
+        <div class="filter-group priority">
+          <span class="filter-group-title">Filtros principais</span>
+          <label>Mês de referência<select id="f_mes"></select></label>
+          <label>Janela temporal<select id="f_janela"><option value="1">Mês</option><option value="3">Trimestre</option><option value="6">Semestre</option><option value="12">Últimos 12 meses</option></select></label>
+          <label>Tipologia territorial Amazônia Azul<select id="f_tipologia_territorial_amazonia_azul"></select></label>
+          <label>Atividade vinculada à Amazônia Azul<select id="f_atividade_vinculada_amazonia_azul"></select></label>
+        </div>
+        <div class="filter-group">
+          <span class="filter-group-title">Território e financiamento</span>
+          <label>Fundo/instrumento<select id="f_fundo_origem"></select></label>
+          <label>Macrorregião geográfica<select id="f_macrorregiao_geografica"></select></label>
+          <label>UF<select id="f_uf"></select></label>
+          <label>Município<select id="f_cod_mun"></select></label>
         <label>Setor<select id="f_setor"></select></label>
         <label>Programa<select id="f_programa"></select></label>
         <label>Linha de financiamento<select id="f_linha_financiamento"></select></label>
@@ -46,11 +51,12 @@
         <label>Finalidade da operação<select id="f_finalidade"></select></label>
         <label>Natureza do contratante<select id="f_natureza_contratante"></select></label>
         <label>Sexo<select id="f_sexo_padronizado"></select></label>
-        <label>Instituição operadora<select id="f_instituicao"></select></label>
-        <label>Faixa de valor contratado<select id="f_faixa_valor_contratado"></select></label>
-        <label>Faixa de taxa de juros<select id="f_faixa_taxa_juros"></select></label>
-        <label>Faixa de contratos<select id="f_faixa_contratos"></select></label>
-        <label>Faixa de beneficiários<select id="f_faixa_beneficiarios"></select></label>
+          <label>Instituição operadora<select id="f_instituicao"></select></label>
+          <label>Faixa de valor contratado<select id="f_faixa_valor_contratado"></select></label>
+          <label>Faixa de taxa de juros<select id="f_faixa_taxa_juros"></select></label>
+          <label>Faixa de contratos<select id="f_faixa_contratos"></select></label>
+          <label>Faixa de beneficiários<select id="f_faixa_beneficiarios"></select></label>
+        </div>
       </div>
     </aside>
 
@@ -67,19 +73,20 @@
         <div id="mainCards" class="cards"></div>
         <article class="panel narrative"><h3>Leitura da seleção atual</h3><p id="selectionNarrative">Carregando...</p></article>
         <div class="panel-header"><h2>Evolução temporal</h2><select id="temporalMode"><option value="abs">Valores absolutos</option><option value="share">Percentual da janela</option></select></div>
-        <div class="chart-grid three"><div class="chart-card"><div id="chart_ts_valor"></div></div><div class="chart-card"><div id="chart_ts_beneficiarios"></div></div><div class="chart-card"><div id="chart_ts_contratos"></div></div></div>
+        <div class="chart-grid three overview-grid"><div class="chart-card chart-card-large"><div id="chart_ts_valor" class="plot"></div></div><div class="chart-card chart-card-large"><div id="chart_ts_beneficiarios" class="plot"></div></div><div class="chart-card chart-card-large"><div id="chart_ts_contratos" class="plot"></div></div></div>
         <div class="panel-header"><h2>Comparação territorial</h2><select id="territoryMode"><option value="abs">Valores absolutos</option><option value="share">Percentual da janela</option></select></div>
-        <div class="chart-grid three"><div class="chart-card"><div id="chart_terr_valor"></div></div><div class="chart-card"><div id="chart_terr_beneficiarios"></div></div><div class="chart-card"><div id="chart_terr_contratos"></div></div></div>
+        <div class="chart-grid three overview-grid"><div class="chart-card chart-card-large"><div id="chart_terr_valor" class="plot"></div></div><div class="chart-card chart-card-large"><div id="chart_terr_beneficiarios" class="plot"></div></div><div class="chart-card chart-card-large"><div id="chart_terr_contratos" class="plot"></div></div></div>
         <article class="panel"><h2>Participação dos municípios elegíveis no total</h2><div id="shareCards" class="cards compact"></div><div id="chart_shares"></div></article>
       </section>
 
       <section id="detail" class="tab-panel">
         <div class="panel-header"><h2>Rankings visuais</h2><div class="inline-controls"><label>Dimensão<select id="rankDimension"></select></label><label>Indicador<select id="rankIndicator"></select></label></div></div>
-        <div class="chart-grid two"><div class="chart-card"><h3>Top 10</h3><div id="chart_rank_top"></div></div><div class="chart-card"><h3>Bottom 10</h3><div id="chart_rank_bottom"></div></div></div>
+        <div class="chart-grid one"><div class="chart-card chart-card-large"><h3>Top 10</h3><div id="chart_rank_top" class="plot tall"></div></div></div>
       </section>
 
       <section id="indicators" class="tab-panel">
-        <article class="panel"><div class="panel-header"><h2>Participação por tipologia territorial</h2><select id="tipologyMode"><option value="abs">Valores absolutos</option><option value="shareTotal">Participação no total da seleção</option><option value="shareTip">Participação dentro da tipologia</option></select></div><div class="chart-grid three"><div id="chart_tip_valor"></div><div id="chart_tip_beneficiarios"></div><div id="chart_tip_contratos"></div></div></article>
+        <article class="panel"><div class="panel-header"><h2>Valor, contratos e beneficiários por tipologia territorial</h2><select id="tipologyMode"><option value="abs">Valores absolutos</option><option value="shareTotal">Participação no total da seleção</option><option value="shareTip">Participação Amazônia Azul dentro da tipologia</option></select></div><div class="chart-grid three"><div id="chart_tip_valor" class="plot"></div><div id="chart_tip_contratos" class="plot"></div><div id="chart_tip_beneficiarios" class="plot"></div></div></article>
+        <article class="panel"><div class="panel-header"><h2>Participação das atividades vinculadas à Amazônia Azul</h2><p class="note">Barras empilhadas em percentual: parcela vinculada e não vinculada no total filtrado.</p></div><div class="chart-grid three"><div id="chart_stack_valor" class="plot"></div><div id="chart_stack_contratos" class="plot"></div><div id="chart_stack_beneficiarios" class="plot"></div></div></article>
         <article class="panel"><div class="panel-header"><h2>Locais com aumento em atividades Amazônia Azul</h2><div class="inline-controls"><label>Nível territorial<select id="increaseLevel"><option value="cod_mun">Município</option><option value="uf">UF</option><option value="macrorregiao_geografica">Macrorregião</option><option value="tipologia_territorial_amazonia_azul">Tipologia territorial</option></select></label><label>Indicador<select id="increaseMetric"><option value="valor">Valor</option><option value="beneficiarios">Beneficiários</option><option value="contratos">Contratos</option></select></label></div></div><div id="increaseCards" class="cards compact"></div><div id="chart_increase"></div></article>
         <article class="panel"><div class="panel-header"><h2>Evolução por tipologia territorial</h2><label>Indicador<select id="evoTipMetric"><option value="valor_azul">Valor contratado nas atividades Amazônia Azul</option><option value="beneficiarios_azul">Beneficiários nas atividades Amazônia Azul</option><option value="contratos_azul">Contratos nas atividades Amazônia Azul</option><option value="share_valor_azul">Participação das atividades no valor</option><option value="share_beneficiarios_azul">Participação das atividades nos beneficiários</option><option value="share_contratos_azul">Participação das atividades nos contratos</option><option value="share_mulheres_valor">Participação feminina no valor</option></select></label></div><div id="chart_evo_tipology"></div></article>
         <article class="panel"><div class="panel-header"><h2>Benchmarking territorial</h2><div class="inline-controls"><label>Território selecionado<select id="benchA"></select></label><label>Benchmark<select id="benchB"></select></label></div></div><div id="benchCards" class="cards compact"></div><div id="chart_benchmark"></div><div class="table-wrap"><table id="benchTable"><thead><tr><th>Indicador</th><th>Território selecionado</th><th>Benchmark</th><th>Diferença absoluta</th><th>Diferença p.p.</th><th>Diferença relativa</th></tr></thead><tbody></tbody></table></div></article>
