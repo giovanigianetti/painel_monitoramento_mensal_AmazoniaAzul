@@ -1,6 +1,7 @@
 const App = (() => {
   const state = {
     cube:null, meta:null, bench:null, months:[], activeTab:'methodology', mapLoaded:false, mapRendering:false,
+    mapNeedsRender:false,
     filterDims:[
       'fundo_origem','macrorregiao_geografica','uf','cod_mun','tipologia_territorial_amazonia_azul','atividade_vinculada_amazonia_azul',
       'setor','programa','linha_financiamento','atividade','cnae','porte','finalidade','natureza_contratante','sexo_padronizado','instituicao',
@@ -80,7 +81,18 @@ const App = (() => {
   function chartTick(mode){ return mode==='share' ? '.1%' : ',.1f'; }
   function chartHover(mode){ return mode==='share' ? '%{x}<br>%{fullData.name}: %{y:.1%}<extra></extra>' : '%{x}<br>%{fullData.name}: %{y:,.1f}<extra></extra>'; }
   function hasAny(a){ return (a.valor||0)!==0 || (a.beneficiarios||0)!==0 || (a.contratos||0)!==0; }
-  function resizeSoon(){ setTimeout(()=>Charts.resizeAll(document.getElementById(state.activeTab) || document), 60); }
+  function resizeSoon(){
+    requestAnimationFrame(()=>{
+      setTimeout(()=>{
+        Charts.resizeAll(document.getElementById(state.activeTab) || document);
+        if(state.activeTab==='maps') MapController.invalidate();
+      }, 80);
+    });
+  }
+  const renderDebounced = (() => {
+    let timer=null;
+    return () => { clearTimeout(timer); timer=setTimeout(renderActive, 70); };
+  })();
 
   function initFilters(){
     state.months = state.meta.months.filter(m=>m!=='Não informado').sort();
@@ -95,7 +107,7 @@ const App = (() => {
     fillSelect('rankDimension', Object.keys(labelDims), {all:false, labeler:v=>labelDims[v], defaultValue:'setor'});
     fillSelect('rankIndicator', Object.keys(rankIndicators), {all:false, labeler:v=>rankIndicators[v], defaultValue:'valor'});
     buildBenchmarkOptions();
-    document.querySelectorAll('select').forEach(s=>s.addEventListener('change', renderActive));
+    document.querySelectorAll('select').forEach(s=>s.addEventListener('change', renderDebounced));
     document.getElementById('clearFilters').addEventListener('click', () => {
       for(const dim of state.filterDims){ const el=document.getElementById('f_'+dim); if(el) el.value='__all__'; }
       document.getElementById('f_janela').value='1';
@@ -306,9 +318,12 @@ const App = (() => {
     const r=await fetch('metodologia/metodologia.md'); const md=await r.text(); el.innerHTML=marked.parse(md); el.dataset.loaded='1';
   }
   function renderMap(){
-    if(state.mapRendering) return;
-    state.mapRendering=true;
-    MapController.render(state).finally(()=>{ state.mapRendering=false; state.mapLoaded=true; });
+    if(state.mapRendering){ state.mapNeedsRender=true; return; }
+    state.mapRendering=true; state.mapNeedsRender=false;
+    MapController.render(state).finally(()=>{
+      state.mapRendering=false; state.mapLoaded=true;
+      if(state.mapNeedsRender) renderMap();
+    });
   }
   function renderActive(){
     if(!state.cube) return;
@@ -327,6 +342,7 @@ const App = (() => {
       state.activeTab=btn.dataset.tab;
       renderActive();
       resizeSoon();
+      if(state.activeTab==='maps') setTimeout(()=>MapController.invalidate(), 160);
     }));
   }
   async function init(){
@@ -335,7 +351,7 @@ const App = (() => {
       state.meta.municipios.forEach(m=>state.munLabel.set(m.cod_mun, `${m.nome_mun} (${m.uf})`));
       document.getElementById('source-period').textContent = `${Utils.formatMonth(state.meta.source_summary.mes_inicial)} – ${Utils.formatMonth(state.meta.source_summary.mes_final)}`;
       document.getElementById('source-summary').textContent = `${Utils.formatNumber(state.meta.source_summary.linhas_base_financiamento)} linhas brutas processadas; ${Utils.formatNumber(state.cube.meta.rows_aggregated)} agregações públicas.`;
-      initFilters(); initTabs(); renderActive();
+      initFilters(); initTabs(); Charts.installResizeObserver(document); renderActive();
     }catch(e){ console.error(e); document.querySelector('.content').innerHTML=`<article class="panel"><h2>Erro ao carregar dashboard</h2><p>${e.message}</p></article>`; }
   }
   return {init, state};

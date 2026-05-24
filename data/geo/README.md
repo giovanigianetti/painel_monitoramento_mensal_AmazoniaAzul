@@ -1,5 +1,8 @@
 # Malhas geográficas
 
-Copie para esta pasta os arquivos `municipios_ibge_topo.json` e `ufs_ibge_topo.json` do repositório PNDR_4, ou execute `python scripts/baixar_malhas_pndr4.py` a partir da raiz do projeto.
+A aba Mapas tenta carregar, em ordem, malhas locais, malhas da pasta `maps/`, malhas remotas do PNDR_4 e fallbacks públicos. Para operação mais robusta em GitHub Pages, recomenda-se copiar para esta pasta:
 
-Na ausência desses arquivos locais, o dashboard usa a API pública de malhas do IBGE como fallback quando houver conexão à internet.
+- `municipios_ibge_topo.json`
+- `ufs_ibge_topo.json`
+
+Os arquivos podem ser copiados do repositório PNDR_4 ou baixados com `python scripts/baixar_malhas_pndr4.py` quando houver acesso à internet. O código também aceita `municipios.geojson` e `ufs.geojson`.
