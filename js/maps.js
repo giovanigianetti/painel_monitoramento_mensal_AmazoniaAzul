@@ -4,8 +4,8 @@ const MapController = (() => {
   let lastSource = {municipios:null, ufs:null};
   let lastStats = {municipios:null, ufs:null};
 
-  const seq = ['#eaf6fb','#d7eff9','#c3e4f3','#abd9ed','#9ccfe5','#7bbddb','#5ca9cf','#3f91bd','#2a7da8','#176b93'];
-  const neg = ['#fff1df','#fee2c5','#fbd0a2','#f9bd7c','#f59e0b','#ee8428','#dc6b19','#c85514','#b94018','#b91c1c'];
+  const seq = ['#edf8e9','#d9f0d3','#c7e9c0','#a1d99b','#74c476','#41ab5d','#238b45','#006d2c','#005a32','#00441b'];
+  const neg = ['#fee5d9','#fcbba1','#fc9272','#fb6a4a','#ef3b2c','#cb181d','#a50f15','#7f0000','#67000d','#4a0008'];
 
   const IBGE_MUNI = 'https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?formato=application%2Fjson&intrarregiao=municipio&qualidade=minima';
   const IBGE_UF = 'https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?formato=application%2Fjson&intrarregiao=UF&qualidade=minima';
@@ -352,15 +352,16 @@ const MapController = (() => {
     return idxs.map(i => `<i style="background:${paletteColor(palette,i,classes)}"></i>${labelPrefix}${percentileLabel(i,classes)}`).join('<br>');
   }
 
-  function updateLegend(cls){
+  function updateLegend(cls, metric){
     const div = document.querySelector('.legend');
     if(!div) return;
+    const title = metricName(metric);
     if(!cls.signed){
-      div.innerHTML = `<strong>Percentis</strong><br>${legendRows(seq, cls.classes)}<br><i style="background:#d9e1e8"></i>Não elegível<br><i style="background:#edf3f7"></i>Sem registro<br><i style="background:#e5e7eb"></i>Sem dado`;
+      div.innerHTML = `<strong>${title}</strong><br><span>Percentis do indicador</span><br>${legendRows(seq, cls.classes)}<br><i style="background:#d9e1e8"></i>Não elegível<br><i style="background:#edf3f7"></i>Sem registro<br><i style="background:#e5e7eb"></i>Sem dado`;
     } else {
       const negRows = cls.negCount ? legendRows(neg, cls.negClasses, 'Queda ', true) : '';
       const posRows = cls.posCount ? legendRows(seq, cls.posClasses, 'Crescimento ') : '';
-      div.innerHTML = `<strong>Percentis separados</strong><br>${negRows}${negRows?'<br>':''}<i style="background:#cbd5e1"></i>Estável${posRows?'<br>'+posRows:''}<br><i style="background:#d9e1e8"></i>Não elegível<br><i style="background:#edf3f7"></i>Sem registro<br><i style="background:#e5e7eb"></i>Sem dado`;
+      div.innerHTML = `<strong>${title}</strong><br><span>Percentis separados</span><br>${negRows}${negRows?'<br>':''}<i style="background:#cbd5e1"></i>Estável${posRows?'<br>'+posRows:''}<br><i style="background:#d9e1e8"></i>Não elegível<br><i style="background:#edf3f7"></i>Sem registro<br><i style="background:#e5e7eb"></i>Sem dado`;
     }
   }
 
@@ -368,6 +369,12 @@ const MapController = (() => {
     if(metric.includes('share') || metric.includes('growth')) return Utils.formatPercent(v);
     if(metric.includes('valor')) return Utils.formatBRLFull(v);
     return Utils.formatNumber(v);
+  }
+
+  function metricName(metric){
+    const select = document.getElementById('mapIndicator');
+    const opt = select ? Array.from(select.options).find(o => o.value === metric) : null;
+    return opt ? opt.textContent : metric;
   }
 
   function featureRecord(data, feature){
@@ -390,10 +397,10 @@ const MapController = (() => {
 
   function bindTooltipFactory(data, metric, cls){
     return (feature, layer) => {
-      const d = featureRecord(data, feature), m = d?.meta || {}, a = d?.current || Utils.empty(), p = feature.properties || {}, v = d?.value;
+      const d = featureRecord(data, feature), m = d?.meta || {}, p = feature.properties || {}, v = d?.value;
       const name = m.nome_mun || p.nome || p.name || p.NM_MUN || p.description || p.name_muni || p.nome_municipio || p.NM_MUNICIP || 'Município';
       const uf = m.uf || p.uf || p.UF || p.sigla_uf || '';
-      layer.bindTooltip(`<strong>${name}</strong><br>UF: ${uf}<br>Macrorregião: ${m.macrorregiao_geografica || ''}<br>Tipologia territorial: ${m.tipologia_territorial_amazonia_azul || '—'}<br>Elegível ao Programa: ${m.elegivel_amazonia_azul || '—'}<br>Valor contratado: ${Utils.formatBRLFull(a.valor)}<br>Beneficiários: ${Utils.formatNumber(a.beneficiarios)}<br>Contratos: ${Utils.formatNumber(a.contratos)}<br>Participação Amazônia Azul: ${Utils.formatPercent(Utils.pct(a.valor_azul,a.valor))}<br>Participação feminina: ${Utils.formatPercent(Utils.pct(a.valor_mulheres,a.valor))}<br>Indicador do mapa: ${metricValueText(metric,v)}<br>Classe: ${classLabel(d,cls)}`, {sticky:true});
+      layer.bindTooltip(`<strong>${name}</strong><br>UF: ${uf}<br>${metricName(metric)}: ${metricValueText(metric,v)}<br>Classe: ${classLabel(d,cls)}`, {sticky:true});
       layer.on('mouseover', () => layer.setStyle({weight:1.15,color:'#102a43'}));
       layer.on('mouseout', () => { if(muniLayer) muniLayer.resetStyle(layer); });
     };
@@ -423,7 +430,7 @@ const MapController = (() => {
       const [muniGeo, ufGeo] = await Promise.all([loadGeoJSON('municipios'), loadGeoJSON('ufs')]);
       const {data, metric, previousComplete} = mapData;
       const cls = classify(metric, data);
-      updateLegend(cls);
+      updateLegend(cls, metric);
 
       if(muniLayer){ try{ map.removeLayer(muniLayer); } catch(e){} }
       if(ufLayer){ try{ map.removeLayer(ufLayer); } catch(e){} }

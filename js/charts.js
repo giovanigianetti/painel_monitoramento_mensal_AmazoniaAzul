@@ -146,6 +146,26 @@ const Charts = (() => {
       showlegend:false
     }));
   }
+  function scatter(id, x, y, title, opts={}){
+    const xx=normalize(x), yy=normalize(y);
+    const points = xx.map((vx,i)=>({x:vx, y:yy[i], custom:(opts.customdata||[])[i], color:(opts.colors||[])[i]}))
+      .filter(p => Number.isFinite(p.x) && Number.isFinite(p.y));
+    if(!points.length){ clear(id); return; }
+    react(id, [{
+      type:'scatter',
+      mode:'markers',
+      x:points.map(p=>p.x),
+      y:points.map(p=>p.y),
+      customdata:points.map(p=>p.custom),
+      marker:{size:9,opacity:.78,color:points.map(p=>p.color||COLORS.blue),line:{color:'white',width:.8}},
+      hovertemplate:opts.hovertemplate || '%{customdata}<br>x: %{x:,.1f}<br>y: %{y:.1%}<extra></extra>'
+    }], commonLayout(title, {
+      margin:opts.margin || {l:80,r:34,t:52,b:78},
+      xaxis:{title:{text:opts.xTitle||'',font:{size:12}},automargin:true,tickformat:opts.xTickformat||'',rangemode:'tozero',zeroline:true,zerolinecolor:'#8fa1ad',fixedrange:true},
+      yaxis:{title:{text:opts.yTitle||'',font:{size:12}},automargin:true,tickformat:opts.yTickformat||'',zeroline:true,zerolinecolor:'#8fa1ad',fixedrange:true},
+      showlegend:false
+    }));
+  }
   function resizeAll(root=document){
     if(!window.Plotly) return;
     (root||document).querySelectorAll('.js-plotly-plot').forEach(node=>{ try{ Plotly.Plots.resize(node); }catch(e){} });
@@ -161,5 +181,5 @@ const Charts = (() => {
     root.querySelectorAll('.panel,.chart-card').forEach(node=>ro.observe(node));
     return ro;
   }
-  return {bar,hbar,line,groupedBar,stackedPercent,dotPlot,clear,resizeAll,installResizeObserver,truncate,COLORS};
+  return {bar,hbar,line,groupedBar,stackedPercent,dotPlot,scatter,clear,resizeAll,installResizeObserver,truncate,COLORS};
 })();

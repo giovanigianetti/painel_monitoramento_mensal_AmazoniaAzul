@@ -219,16 +219,13 @@ const App = (() => {
   }
 
   function renderIndicatorKeys(){
-    const {current}=windowInfo(); const base=currentFilters(); const {azul, nao, total}=splitAzul(base,current);
+    const {current}=windowInfo(); const base=currentFilters(); const {azul, total}=splitAzul(base,current);
     const sValor=Utils.pct(azul.valor,total.valor), sCont=Utils.pct(azul.contratos,total.contratos), sBen=Utils.pct(azul.beneficiarios,total.beneficiarios);
     document.getElementById('indicatorCards').innerHTML = [
       Utils.makeCard('Valor contratado', Utils.formatBRL(total.valor), `${Utils.formatPercent(sValor)} vinculado à Amazônia Azul`),
       Utils.makeCard('Contratos', Utils.formatNumber(total.contratos), `${Utils.formatPercent(sCont)} vinculados à Amazônia Azul`),
       Utils.makeCard('Beneficiários', Utils.formatNumber(total.beneficiarios), `${Utils.formatPercent(sBen)} vinculados à Amazônia Azul`)
     ].join('');
-    Charts.bar('chart_key_valor', ['Vinculada à Amazônia Azul','Não vinculada'], [azul.valor, nao.valor], 'Valor contratado — composição absoluta', {tickangle:-20, maxLabel:24, hovertemplate:'%{customdata}<br>%{y:,.2f}<extra></extra>'});
-    Charts.bar('chart_key_contratos', ['Vinculada à Amazônia Azul','Não vinculada'], [azul.contratos, nao.contratos], 'Contratos — composição absoluta', {tickangle:-20, maxLabel:24});
-    Charts.bar('chart_key_beneficiarios', ['Vinculada à Amazônia Azul','Não vinculada'], [azul.beneficiarios, nao.beneficiarios], 'Beneficiários — composição absoluta', {tickangle:-20, maxLabel:24});
   }
   function renderTipologyParticipation(){
     const mode=document.getElementById('tipologyMode').value; const {current}=windowInfo(); const filters=currentFilters(); const map=Transforms.aggregateBy(state, idxFor(filters,current), 'tipologia_territorial_amazonia_azul'); const labels=[...map.keys()].filter(k=>k && k!=='Não elegível').sort(); const total=Transforms.aggregateIndices(state, idxFor(filters,current));
@@ -283,11 +280,16 @@ const App = (() => {
         const label = level==='cod_mun' ? (state.munLabel.get(d.key)||d.key) : d.key;
         const cur=Transforms.derived(d.current, indicator)||0;
         const prev=Transforms.derived(d.previous, indicator)||0;
-        let status='Estável', delta=cur-prev;
-        if(!previousComplete || (prev===0 && cur!==0)) status='Sem base anterior';
-        else if(delta>0) status='Aumentou';
-        else if(delta<0) status='Reduziu';
-        return {label, cur, prev, delta, status};
+        const delta=cur-prev;
+        let status='Estável', rate=null;
+        if(!previousComplete || prev===0){
+          status = delta===0 && previousComplete ? 'Estável' : 'Sem base anterior';
+        } else {
+          rate = delta / prev;
+          if(delta>0) status='Aumentou';
+          else if(delta<0) status='Reduziu';
+        }
+        return {label, cur, prev, delta, rate, status};
       })
       .filter(d=>d.label && String(d.label).trim()!=='' && d.label!=='Não informado');
     const counts = {Aumentou:0, Reduziu:0, Estável:0, 'Sem base anterior':0};
@@ -298,17 +300,23 @@ const App = (() => {
       Utils.makeCard('Estável', Utils.formatNumber(counts.Estável), growthLevelLabels[level]),
       Utils.makeCard('Sem base anterior', Utils.formatNumber(counts['Sem base anterior']), 'Janela anterior insuficiente ou denominador zero')
     ].join('');
-    const plotRows = rows
-      .filter(r=>r.status!=='Sem base anterior' && r.delta!==null && r.delta!==undefined && !Number.isNaN(r.delta))
-      .sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta))
-      .slice(0, level==='cod_mun' ? 40 : 60)
-      .reverse();
-    const formatter = indicator.includes('valor') ? Utils.formatBRL : Utils.formatNumber;
-    Charts.dotPlot('chart_growth_dots', plotRows.map(r=>r.label), plotRows.map(r=>r.delta), `Variação — ${growthIndicatorLabels[indicator]} por ${growthLevelLabels[level]}`, {
-      tickformat: indicator.includes('valor') ? ',.1f' : ',.1f',
-      formatter,
-      maxLabel: level==='cod_mun' ? 54 : 42,
-      hovertemplate:'%{customdata}<br>Variação: %{text}<extra></extra>'
+    const plotRows = rows.filter(r => Number.isFinite(r.cur) && Number.isFinite(r.rate));
+    const xFormatter = indicator.includes('valor') ? Utils.formatBRL : Utils.formatNumber;
+    const customdata = plotRows.map(r => [
+      r.label,
+      xFormatter(r.cur),
+      Utils.formatPercent(r.rate),
+      r.status,
+      Utils.formatBRL ? (indicator.includes('valor') ? Utils.formatBRL(r.delta) : Utils.formatNumber(r.delta)) : r.delta
+    ]);
+    Charts.scatter('chart_growth_dots', plotRows.map(r=>r.cur), plotRows.map(r=>r.rate), `Dispersão — ${growthIndicatorLabels[indicator]} por ${growthLevelLabels[level]}`, {
+      xTitle:'Valor absoluto do indicador na janela atual',
+      yTitle:'Taxa de variação frente à janela anterior',
+      xTickformat: indicator.includes('valor') ? ',.1f' : ',.1f',
+      yTickformat:'.1%',
+      customdata,
+      colors: plotRows.map(r => r.status==='Aumentou' ? '#238b45' : r.status==='Reduziu' ? '#b91c1c' : '#94a3b8'),
+      hovertemplate:'<strong>%{customdata[0]}</strong><br>Valor absoluto: %{customdata[1]}<br>Taxa de variação: %{customdata[2]}<br>Variação absoluta: %{customdata[4]}<br>Classificação: %{customdata[3]}<extra></extra>'
     });
   }
   function renderIndicators(){ renderIndicatorKeys(); renderGrowthLocations(); renderTipologyParticipation(); renderBenchmark(); resizeSoon(); }
