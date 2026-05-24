@@ -1,24 +1,27 @@
 {
-  "package": "dashboard_monitoramento_amazul_v2_correcao_robusta",
+  "package": "dashboard_monitoramento_amazul_v2_mapas_corrigidos",
   "maps": {
-    "preferred_local": [
-      "data/geo/municipios_ibge_topo.json",
-      "data/geo/ufs_ibge_topo.json",
+    "primary_runtime_sources": {
+      "municipios_ibge_api": "https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?formato=application%2Fjson&intrarregiao=municipio&qualidade=minima",
+      "ufs_ibge_api": "https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?formato=application%2Fjson&intrarregiao=UF&qualidade=minima"
+    },
+    "validated_local_fallbacks": [
       "maps/municipios_ibge_topo.json",
       "maps/ufs_ibge_topo.json",
+      "data/geo/municipios_ibge_topo.json",
+      "data/geo/ufs_ibge_topo.json",
+      "maps/municipios.geojson",
+      "maps/ufs.geojson",
       "data/geo/municipios.geojson",
       "data/geo/ufs.geojson"
     ],
-    "pndr4_sources": {
-      "municipios": "https://raw.githubusercontent.com/giovanigianetti/PNDR_4/main/maps/municipios_ibge_topo.json",
-      "ufs": "https://raw.githubusercontent.com/giovanigianetti/PNDR_4/main/maps/ufs_ibge_topo.json"
-    },
-    "additional_remote_fallbacks": {
+    "remote_fallbacks": {
+      "municipios_pndr4": "https://raw.githubusercontent.com/giovanigianetti/PNDR_4/main/maps/municipios_ibge_topo.json",
+      "ufs_pndr4": "https://raw.githubusercontent.com/giovanigianetti/PNDR_4/main/maps/ufs_ibge_topo.json",
       "municipios_geodata_br": "https://raw.githubusercontent.com/tbrugz/geodata-br/master/geojson/geojs-100-mun.json",
-      "ufs_geodata_br_states": "https://raw.githubusercontent.com/giuliano-macedo/geodata-br-states/master/geojson/br_states.json",
-      "municipios_ibge_api": "https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?formato=application%2Fjson&intrarregiao=municipio&qualidade=minima",
-      "ufs_ibge_api": "https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?formato=application%2Fjson&intrarregiao=UF&qualidade=minima"
+      "ufs_geodata_br_states": "https://raw.githubusercontent.com/giuliano-macedo/geodata-br-states/master/geojson/br_states.json"
     }
   },
+  "validation": "O carregador rejeita fontes que não sejam Polygon/MultiPolygon, malhas municipais com menos de 1000 polígonos, malhas de UF com menos de 20 polígonos, coordenadas fora de longitude/latitude do Brasil ou malhas municipais sem códigos suficientes.",
   "classification": "Legendas em percentis. Se houver valores positivos e negativos, as distribuições são separadas para quedas e crescimentos."
 }

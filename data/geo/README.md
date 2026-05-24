@@ -1,8 +1,12 @@
 # Malhas geográficas
 
-A aba Mapas tenta carregar, em ordem, malhas locais, malhas da pasta `maps/`, malhas remotas do PNDR_4 e fallbacks públicos. Para operação mais robusta em GitHub Pages, recomenda-se copiar para esta pasta:
+A aba **Mapas** carrega, em tempo de execução, malhas de polígonos municipais e estaduais. A ordem de carregamento foi ajustada para priorizar a API de Malhas Geográficas do IBGE e, somente em caso de falha, usar arquivos locais ou remotos do padrão PNDR_4/geodata-br.
+
+O carregador valida cada fonte antes de renderizar: rejeita malhas de pontos, geometrias não poligonais, arquivos com poucos polígonos, coordenadas fora do padrão longitude/latitude do Brasil e arquivos municipais sem códigos suficientes para associação aos dados agregados.
+
+Arquivos locais opcionais podem ser colocados nesta pasta, desde que estejam em GeoJSON ou TopoJSON com polígonos municipais/UFs válidos:
 
 - `municipios_ibge_topo.json`
 - `ufs_ibge_topo.json`
-
-Os arquivos podem ser copiados do repositório PNDR_4 ou baixados com `python scripts/baixar_malhas_pndr4.py` quando houver acesso à internet. O código também aceita `municipios.geojson` e `ufs.geojson`.
+- `municipios.geojson`
+- `ufs.geojson`
