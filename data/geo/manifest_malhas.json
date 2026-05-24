@@ -1,15 +1,14 @@
 {
-  "package": "dash_monitoramento_amazul_v2",
+  "package": "dashboard_monitoramento_amazul_v2",
   "maps": {
-    "local_geojson_supported": [
-      "data/geo/municipios_ibge_topo.json",
-      "data/geo/ufs_ibge_topo.json"
-    ],
     "local_topojson_supported": [
       "data/geo/municipios_ibge_topo.json",
       "data/geo/ufs_ibge_topo.json"
     ],
-    "reference_repository": "https://github.com/giovanigianetti/PNDR_4/tree/main/maps"
+    "remote_fallback": {
+      "municipios": "https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?intrarregiao=municipio&qualidade=minima&formato=application/json",
+      "ufs": "https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?intrarregiao=UF&qualidade=minima&formato=application/json"
+    }
   },
-  "notes": "O dashboard carrega arquivos locais. Os nomes foram mantidos compatíveis com o repositório PNDR_4; para uso cartográfico oficial, substituir por maps/municipios_ibge_topo.json e maps/ufs_ibge_topo.json do PNDR_4."
+  "notes": "O dashboard tenta carregar TopoJSON local. Se ausente, usa as malhas simplificadas oficiais do IBGE via API. Para funcionamento 100% offline, copie os arquivos municipios_ibge_topo.json e ufs_ibge_topo.json para esta pasta."
 }

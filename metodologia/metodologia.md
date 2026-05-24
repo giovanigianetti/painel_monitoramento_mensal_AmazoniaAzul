@@ -1,150 +1,99 @@
-# Metodologia do dashboard
+# Metodologia
 
 ## Objetivo
 
-O dashboard monitora a execução mensal de financiamentos dos Fundos Constitucionais e instrumentos associados ao Programa Amazônia Azul, com foco em municípios elegíveis, atividades vinculadas ao Programa, participação feminina e evolução territorial da execução.
+O dashboard monitora a execução mensal de financiamentos associados ao Programa Amazônia Azul, com foco em valor contratado, beneficiários, contratos, participação de atividades vinculadas à Amazônia Azul, participação dos municípios elegíveis no total da base e participação feminina.
 
 ## Fontes de dados
 
-A base inicial de operações corresponde ao arquivo do FNE com contratações de janeiro a março de 2026. O arquivo bruto não é publicado no dashboard. Ele é usado apenas localmente pelo script de pré-processamento para gerar arquivos públicos agregados e codificados.
+A base de financiamento usada no pré-processamento é `FNE_AnexoI_Contratações_032026.xlsx`, aba `Dados_Anexo-I`. A classificação territorial é proveniente de `Tipologia Amazônia Azul (v5).xlsx`, aba `Base de dados`.
 
-A tipologia territorial é extraída do arquivo `Tipologia Amazônia Azul (v5).xlsx`, utilizando o código do município, nome, UF e a coluna `Tipologia Amazônia Azul`.
+As bases brutas são usadas apenas localmente. O repositório público contém somente JSONs agregados e compactos, sem Excel, CSV ou registros individuais.
 
-## Município elegível e atividade vinculada à Amazônia Azul
+## Estrutura dos arquivos dos fundos
 
-O dashboard diferencia duas dimensões:
+O script aceita a estrutura do Anexo I, com colunas de UF, município, data da contratação, CNAE, setor, programa, atividade, porte, finalidade, valor contratado, beneficiários, contratos, instituição operadora e sexo. Novos fundos podem ser empilhados desde que preservem essa estrutura e recebam identificador de origem.
 
-1. **Município elegível ao Programa Amazônia Azul**: município presente na base territorial de tipologia do Programa.
-2. **Atividade vinculada à Amazônia Azul**: variável `TIPOLOGIA AMAZÔNIA AZUL` da base de financiamentos, com valores `Sim` ou `Não`, indicando se a atividade financiada é classificada como vinculada ao Programa.
+## Elegibilidade territorial
 
-Essa distinção é essencial: um município pode ser elegível, mas nem toda operação localizada nele necessariamente financia atividade vinculada à Amazônia Azul.
+A lista de municípios do arquivo de tipologia define os municípios elegíveis ao Programa Amazônia Azul. A coluna `Tipologia Amazônia Azul` desse arquivo é tratada como **Tipologia territorial Amazônia Azul**, com classes como Alta-Alta, Alta-Média, Alta-Baixa, Média-Alta, Média-Média, Média-Baixa e Baixa.
 
-## Dados públicos agregados
+## Atividade vinculada e tipologia territorial
 
-A base bruta é transformada em `data/processed/operacoes_agregadas_publicas.json`. Esse arquivo contém apenas combinações agregadas por mês, território e dimensões analíticas. Os valores publicados são somas agregadas de:
+O dashboard separa duas classificações:
 
-- valor contratado;
-- beneficiários;
-- contratos;
-- número de registros agregados.
+1. **Atividade vinculada à Amazônia Azul**: vem da coluna `TIPOLOGIA AMAZÔNIA AZUL` da base de financiamentos e identifica se a operação financiada pertence a uma atividade vinculada à Amazônia Azul.
+2. **Tipologia territorial Amazônia Azul**: vem do arquivo de tipologia e caracteriza a prioridade territorial do município.
 
-O arquivo é codificado por dicionários de categorias para reduzir tamanho e evitar a disponibilização da base original.
+Essas variáveis não são intercambiáveis. A primeira classifica a operação; a segunda classifica o território.
 
-## Denominadores gerais
+## Indicadores básicos
 
-Diferentemente da primeira versão, o pré-processamento preserva agregações de municípios elegíveis e não elegíveis. Isso permite calcular:
+Os indicadores centrais são calculados por soma:
 
-- participação dos municípios elegíveis no total geral da base;
-- participação das atividades vinculadas à Amazônia Azul no total geral da base;
-- participação das atividades vinculadas à Amazônia Azul dentro dos municípios elegíveis.
+- Valor contratado: soma de `VALOR CONTRATADO`.
+- Beneficiários: soma de `QTDE DE BENEFICIÁRIOS`.
+- Contratos: soma de `QUANTIDADE DE CONTRATOS`.
 
-As fórmulas centrais são:
+Os indicadores médios são razões entre esses totais, quando o denominador é válido.
 
-```text
-Participação dos municípios elegíveis = indicador nos municípios elegíveis / indicador total da base
-```
+## Participação das atividades Amazônia Azul nos municípios elegíveis
 
-```text
-Participação das atividades Amazônia Azul no total geral = indicador em atividades Amazônia Azul / indicador total da base
-```
+Para cada seleção, calcula-se:
 
-```text
-Participação das atividades Amazônia Azul nos municípios elegíveis = indicador em atividades Amazônia Azul nos municípios elegíveis / indicador total nos municípios elegíveis
-```
+- Valor das atividades Amazônia Azul nos municípios elegíveis dividido pelo valor total dos municípios elegíveis.
+- Beneficiários das atividades Amazônia Azul nos municípios elegíveis divididos pelos beneficiários totais dos municípios elegíveis.
+- Contratos das atividades Amazônia Azul nos municípios elegíveis divididos pelos contratos totais dos municípios elegíveis.
 
-## Indicadores
+## Participação dos municípios elegíveis no total geral
 
-Os indicadores absolutos são calculados por soma:
+O denominador inclui todos os municípios presentes na base de financiamento, elegíveis e não elegíveis. O numerador considera apenas os municípios elegíveis ao Programa Amazônia Azul.
 
-```text
-Valor contratado = soma do valor contratado
-Beneficiários = soma da quantidade de beneficiários
-Contratos = soma da quantidade de contratos
-```
+## Participação das atividades Amazônia Azul no total geral
 
-Os indicadores de participação das atividades vinculadas à Amazônia Azul são:
+O denominador inclui o total geral da base filtrada. O numerador considera as operações marcadas como atividade vinculada à Amazônia Azul, independentemente de o município ser elegível.
 
-```text
-% valor Amazônia Azul = valor das atividades Amazônia Azul / valor total
-% beneficiários Amazônia Azul = beneficiários das atividades Amazônia Azul / beneficiários totais
-% contratos Amazônia Azul = contratos das atividades Amazônia Azul / contratos totais
-```
+## Participação feminina
 
-A participação feminina é calculada com registros identificados como sexo feminino no numerador. Pessoas jurídicas, registros sem informação de sexo ou categorias não informadas permanecem no denominador quando compõem o total da execução.
+O numerador feminino considera registros com sexo padronizado como `Mulheres`. Pessoas jurídicas, registros sem informação de sexo e categorias não informadas permanecem no denominador quando integram o total da execução.
 
-```text
-% valor mulheres = valor contratado por mulheres / valor contratado total
-% beneficiários mulheres = beneficiários mulheres / beneficiários totais
-% contratos mulheres = contratos mulheres / contratos totais
-```
+## Janelas móveis
 
-## Janelas temporais
+O mês de referência define a janela temporal:
 
-O usuário seleciona um mês de referência e uma janela:
+- Mês: mês selecionado.
+- Trimestre: mês selecionado e dois meses anteriores.
+- Semestre: mês selecionado e cinco meses anteriores.
+- Últimos 12 meses: mês selecionado e onze meses anteriores.
 
-- mês;
-- trimestre;
-- semestre;
-- últimos 12 meses.
+A variação é calculada contra a janela imediatamente anterior de mesmo tamanho. Quando a janela anterior é insuficiente ou possui denominador zero, a variação é indicada como não disponível.
 
-A janela é construída como o mês selecionado e os meses anteriores necessários para completar o intervalo. A variação é calculada contra a janela imediatamente anterior de mesmo tamanho.
+## Crescimento e variações
 
-```text
-Crescimento = (indicador da janela atual - indicador da janela anterior) / indicador da janela anterior
-```
+- Variação absoluta: indicador da janela atual menos indicador da janela anterior.
+- Crescimento percentual: variação absoluta dividida pelo indicador da janela anterior.
+- Variação em pontos percentuais: participação atual menos participação anterior.
 
-Para participações, também é calculada a variação em pontos percentuais.
+## Rankings Top 10 e Bottom 10
 
-## Visão geral
-
-A Visão geral apresenta:
-
-- totais nos municípios elegíveis;
-- valores absolutos das atividades vinculadas à Amazônia Azul;
-- participação dessas atividades no total dos municípios elegíveis;
-- participação dos municípios elegíveis no total geral da base;
-- participação das atividades vinculadas à Amazônia Azul no total geral;
-- evolução temporal separada para valor, beneficiários e contratos;
-- comparação territorial com Brasil, macrorregiões e território selecionado;
-- leitura automática da seleção atual.
-
-## Visão detalhada
-
-A aba Visão detalhada substitui os treemaps por rankings Top 10 e Bottom 10. As dimensões incluem setor, programa, linha de financiamento, atividade, CNAE, porte, finalidade, UF, município, macrorregião, tipologia territorial, instituição operadora, natureza do contratante e sexo.
-
-Os rankings podem ser ordenados por valores absolutos, participações das atividades Amazônia Azul, participação feminina e crescimento.
+Os rankings são calculados por dimensão selecionada e indicador selecionado, respeitando os filtros globais. Categorias sem informação suficiente, denominadores nulos ou valores nulos são removidos quando prejudicam a interpretação do Bottom 10.
 
 ## Indicadores chave
 
-A aba Indicadores chave substitui a antiga aba de dispersão. Ela inclui:
+A aba de indicadores chave reúne: participação por tipologia territorial, contagem de territórios com aumento absoluto, contagem de territórios com aumento de participação relativa, evolução mensal por tipologia territorial e benchmarking territorial.
 
-- participação por tipologia territorial da Amazônia Azul;
-- contagem de territórios que aumentaram em termos absolutos nas atividades vinculadas à Amazônia Azul;
-- contagem de territórios que aumentaram a participação relativa das atividades vinculadas à Amazônia Azul;
-- evolução das tipologias territoriais ao longo do tempo;
-- comparação entre território selecionado e benchmark territorial.
+## Benchmarking territorial
 
-O benchmarking compara o território selecionado com Brasil, macrorregião, UF, município ou tipologia territorial em valores absolutos, diferenças relativas e pontos percentuais quando o indicador é percentual.
+A ferramenta compara um território selecionado com um benchmark. A tabela sintética apresenta indicador, valor do território, valor do benchmark, diferença absoluta, diferença em pontos percentuais quando aplicável e diferença relativa.
 
-## Mapas
+Essa é a única tabela explícita de dados do dashboard.
 
-A aba Mapas usa arquivos locais em `data/geo/`:
+## Mapas coropléticos por quartis
 
-- `municipios_ibge_topo.json`;
-- `ufs_ibge_topo.json`;
-- `manifest_malhas.json`.
+Os mapas usam limites administrativos municipais. Os níveis absolutos e participações são classificados por quartis da distribuição dos municípios elegíveis com dado válido.
 
-O carregador aceita GeoJSON ou TopoJSON. Para uso cartográfico oficial, esses arquivos podem ser substituídos pelos arquivos homônimos da pasta `maps/` do repositório PNDR_4. O mapa municipal apresenta os municípios elegíveis, com contorno estadual sobreposto.
+Para mapas de variação, os valores positivos e negativos são classificados separadamente. Crescimentos usam escala azul; quedas usam escala laranja/vermelha; estabilidade é cinza; ausência de dado é cinza claro.
 
-## Tabela analítica
+## Limitações de interpretação
 
-A tabela analítica apresenta dados agregados e indicadores derivados, com alternância de nível de agregação. A exportação CSV exporta apenas a seleção agregada filtrada, nunca a base bruta.
-
-## Limitações
-
-Os resultados medem execução financeira e distribuição de contratos/beneficiários. Eles não medem, isoladamente, efetividade, adicionalidade, impacto causal, permanência do investimento ou qualidade da implementação. A participação feminina depende da qualidade do preenchimento da variável sexo. As comparações de crescimento exigem base anterior suficiente; quando o denominador é nulo ou inexistente, o indicador é apresentado como não disponível.
-
-
-## Ajuste de performance
-
-Nesta versão, a tabela analítica foi removida da interface para reduzir a carga de renderização no navegador. Os indicadores continuam sendo calculados a partir de dados públicos agregados, sem publicação da base bruta ou de registros individuais.
+Os indicadores refletem a execução registrada na base enviada e não representam avaliação causal de impacto. A existência de contratação em um município ou atividade não implica, isoladamente, efetividade econômica, adicionalidade, geração líquida de emprego ou alteração estrutural no território. Comparações de participação devem ser interpretadas com atenção à composição dos filtros, à sazonalidade e à disponibilidade de série histórica.

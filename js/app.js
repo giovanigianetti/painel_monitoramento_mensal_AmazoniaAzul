@@ -1,131 +1,179 @@
-(() => {
-  const S = { rows: [], manifest: null, filtersReady: false, map: null, munLayer: null, ufLayer: null, currentTable: [] };
-  const $ = id => document.getElementById(id);
-  const all = '__all__';
-  const pctMetrics = new Set(['shareAzulValor','shareAzulBeneficiarios','shareAzulContratos','shareMulheresValor','shareMulheresBeneficiarios','shareMulheresContratos','growthValor','growthBeneficiarios','growthContratos','ppAzulValor','ppAzulBeneficiarios','ppAzulContratos']);
-  const metricLabels = {
-    valor:'Valor contratado', beneficiarios:'Beneficiários', contratos:'Contratos', valorAzul:'Valor Amazônia Azul', beneficiariosAzul:'Beneficiários Amazônia Azul', contratosAzul:'Contratos Amazônia Azul',
-    shareAzulValor:'% valor Amazônia Azul', shareAzulBeneficiarios:'% beneficiários Amazônia Azul', shareAzulContratos:'% contratos Amazônia Azul',
-    shareMulheresValor:'% valor mulheres', shareMulheresBeneficiarios:'% beneficiários mulheres', shareMulheresContratos:'% contratos mulheres',
-    growthValor:'Crescimento do valor', growthBeneficiarios:'Crescimento dos beneficiários', growthContratos:'Crescimento dos contratos',
-    ticketContrato:'Valor médio por contrato', ticketBeneficiario:'Valor médio por beneficiário'
+const App = (() => {
+  const state = {cube:null, meta:null, bench:null, months:[], filterDims:[
+    'fundo_origem','macrorregiao_geografica','uf','cod_mun','tipologia_territorial_amazonia_azul','atividade_vinculada_amazonia_azul','setor','programa','linha_financiamento','atividade','cnae','porte','finalidade','natureza_contratante','sexo_padronizado','instituicao','faixa_valor_contratado','faixa_taxa_juros','faixa_contratos','faixa_beneficiarios'
+  ], activeTab:'overview', mapLoaded:false, munLabel:new Map()};
+
+  const labelDims = {
+    setor:'Setor', programa:'Programa', atividade:'Atividade', cnae:'CNAE', porte:'Porte', finalidade:'Finalidade', uf:'UF', cod_mun:'Município', macrorregiao_geografica:'Macrorregião', tipologia_territorial_amazonia_azul:'Tipologia territorial Amazônia Azul', instituicao:'Instituição operadora', natureza_contratante:'Natureza do contratante'
   };
-  const dimOptions = [
-    ['setor','Setor'],['programa','Programa'],['linha','Linha de financiamento'],['atividade','Atividade'],['cnae','CNAE'],['porte','Porte'],['finalidade','Finalidade da operação'],['uf','UF'],['municipio','Município'],['macro','Macrorregião'],['tipologiaTerritorial','Tipologia territorial'],['instituicao','Instituição operadora'],['pfPj','Natureza do contratante'],['sexo','Sexo']
-  ];
-  const rankingMetrics = [
-    ['valor','Valor contratado'],['beneficiarios','Beneficiários'],['contratos','Contratos'],['shareAzulValor','% valor Amazônia Azul'],['shareAzulBeneficiarios','% beneficiários Amazônia Azul'],['shareAzulContratos','% contratos Amazônia Azul'],['shareMulheresValor','% valor mulheres'],['shareMulheresBeneficiarios','% beneficiários mulheres'],['shareMulheresContratos','% contratos mulheres'],['growthValor','Crescimento percentual do valor'],['growthBeneficiarios','Crescimento percentual dos beneficiários'],['growthContratos','Crescimento percentual dos contratos']
-  ];
-  const tableLevels = [['municipio','Município'],['uf','UF'],['macro','Macrorregião'],['tipologiaTerritorial','Tipologia territorial'],['setor','Setor'],['programa','Programa'],['linha','Linha de financiamento'],['atividade','Atividade'],['cnae','CNAE'],['porte','Porte'],['finalidade','Finalidade'],['instituicao','Instituição operadora'],['pfPj','Natureza do contratante'],['sexo','Sexo'],['registro','Linha agregada pública']];
-
-  const fmtBRL = v => (v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0});
-  const fmtNum = v => (v||0).toLocaleString('pt-BR',{maximumFractionDigits:0});
-  const fmtPct = v => v==null || !isFinite(v) ? 'N.D.' : (v*100).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
-  const fmtVal = (metric, v) => metric.includes('share') || metric.includes('growth') || metric.includes('pp') ? fmtPct(v) : (metric.toLowerCase().includes('valor') || metric==='valor' || metric.includes('ticket') ? fmtBRL(v) : fmtNum(v));
-  const safeDiv = (a,b) => b ? a/b : null;
-  const periodIndex = p => { const [y,m]=(p||'0-0').split('-').map(Number); return y*12+m; };
-  const periodRange = (ref, n) => { const idx=periodIndex(ref); const set=new Set(); for(let i=0;i<n;i++){ const x=idx-i; const y=Math.floor((x-1)/12); const m=((x-1)%12)+1; set.add(`${y}-${String(m).padStart(2,'0')}`); } return set; };
-  const previousRange = (ref,n) => { const idx=periodIndex(ref)-n; const y=Math.floor((idx-1)/12); const m=((idx-1)%12)+1; return periodRange(`${y}-${String(m).padStart(2,'0')}`, n); };
-  const monthLabel = p => { if(!p || p==='Sem data') return p; const [y,m]=p.split('-'); return `${m}/${y}`; };
-
-  function setLoading(txt){ const el=$('loadingStep'); if(el) el.textContent=txt; }
-  async function json(url){ const r=await fetch(url); if(!r.ok) throw new Error(`Falha ao carregar ${url}`); return r.json(); }
-  function fillSelect(id, values, labelAll='Todos', keep=false){ const el=$(id); if(!el) return; const old=el.value; el.innerHTML=''; if(labelAll!==null){ const o=document.createElement('option'); o.value=all; o.textContent=labelAll; el.appendChild(o); } values.filter(v=>v!=null && v!=='').sort((a,b)=>String(a).localeCompare(String(b),'pt-BR')).forEach(v=>{ const o=document.createElement('option'); o.value=v; o.textContent=v; el.appendChild(o); }); if(keep && [...el.options].some(o=>o.value===old)) el.value=old; }
-  function fillStaticSelect(id, opts){ const el=$(id); if(!el) return; el.innerHTML=''; opts.forEach(([v,l])=>{ const o=document.createElement('option'); o.value=v; o.textContent=l; el.appendChild(o); }); }
-
-  function decodePayload(payload){
-    const schema=payload.schema, cat=new Set(payload.cat_fields), look=payload.lookups;
-    return payload.rows.map(arr=>{ const r={}; schema.forEach((name,i)=>{ r[name]=cat.has(name) ? look[name][arr[i]] : arr[i]; }); return r; });
+  const rankIndicators = {
+    valor:'Valor contratado', beneficiarios:'Beneficiários', contratos:'Contratos',
+    share_valor_azul:'Participação das atividades vinculadas no valor', share_beneficiarios_azul:'Participação das atividades vinculadas nos beneficiários', share_contratos_azul:'Participação das atividades vinculadas nos contratos',
+    share_mulheres_valor:'Participação feminina no valor', share_mulheres_beneficiarios:'Participação feminina nos beneficiários', share_mulheres_contratos:'Participação feminina nos contratos',
+    abs_growth_valor:'Crescimento absoluto do valor', abs_growth_beneficiarios:'Crescimento absoluto dos beneficiários', abs_growth_contratos:'Crescimento absoluto dos contratos',
+    pct_growth_valor:'Crescimento percentual do valor', pct_growth_beneficiarios:'Crescimento percentual dos beneficiários', pct_growth_contratos:'Crescimento percentual dos contratos'
+  };
+  function option(label, value){ const o=document.createElement('option'); o.value=value; o.textContent=label; return o; }
+  function fillSelect(id, values, opts={}){
+    const el=document.getElementById(id); if(!el) return; el.innerHTML='';
+    if(opts.all!==false) el.appendChild(option('Todas', '__all__'));
+    values.forEach(v=>el.appendChild(option(opts.labeler?opts.labeler(v):v, v)));
+    if(opts.defaultValue!==undefined) el.value=opts.defaultValue;
   }
-  async function loadData(){
-    setLoading('Carregando manifesto'); S.manifest=await json('data/manifest.json');
-    setLoading('Carregando dados agregados codificados');
-    const files=S.manifest.agregados || [];
-    const allRows=[];
-    for(const f of files){
-      const payload=await json(f.arquivo);
-      const decoded=decodePayload(payload);
-      // Evita Maximum call stack size exceeded em navegadores: não usar push(...array) com dezenas/centenas de milhares de linhas.
-      for(let i=0;i<decoded.length;i++) allRows.push(decoded[i]);
-    }
-    S.rows=allRows;
-    setLoading(`${S.rows.length.toLocaleString('pt-BR')} linhas públicas agregadas carregadas`);
-  }
-
-  function filters(){ return {
-    month:$('filterMonth').value, window:+$('filterWindow').value, indicator:$('indicatorSelect').value, fundo:$('filterFund').value, macro:$('filterMacro').value, uf:$('filterUf').value, municipio:$('filterMunicipio').value,
-    tipologia:$('filterTipologia').value, atividadeAzul:$('filterAtividadeAzul').value, setor:$('filterSetor').value, programa:$('filterPrograma').value, linha:$('filterLinha').value, atividade:$('filterAtividade').value, cnae:$('filterCnae').value, porte:$('filterPorte').value, finalidade:$('filterFinalidade').value, pfPj:$('filterPfPj').value, sexo:$('filterSexo').value, instituicao:$('filterInstituicao').value
-  };}
-  function pass(r, f, opt={}){ if(f.fundo!==all && r.fundo!==f.fundo) return false; if(!opt.ignoreTerritory){ if(f.macro!==all && r.macro!==f.macro) return false; if(f.uf!==all && r.uf!==f.uf) return false; if(f.municipio!==all && r.codMun!==f.municipio) return false; }
-    if(f.tipologia!==all && r.tipologiaTerritorial!==f.tipologia) return false; if(f.atividadeAzul!==all && r.atividadeAzul!==f.atividadeAzul) return false; if(f.setor!==all && r.setor!==f.setor) return false; if(f.programa!==all && r.programa!==f.programa) return false; if(f.linha!==all && r.linha!==f.linha) return false; if(f.atividade!==all && r.atividade!==f.atividade) return false; if(f.cnae!==all && r.cnae!==f.cnae) return false; if(f.porte!==all && r.porte!==f.porte) return false; if(f.finalidade!==all && r.finalidade!==f.finalidade) return false; if(f.pfPj!==all && r.pfPj!==f.pfPj) return false; if(f.sexo!==all && r.sexo!==f.sexo) return false; if(f.instituicao!==all && r.instituicao!==f.instituicao) return false; return true; }
-  function baseRows(f, opt={}){ return S.rows.filter(r=>pass(r,f,opt)); }
-  function inWindow(rows,f,prev=false){ const set=prev?previousRange(f.month,f.window):periodRange(f.month,f.window); return rows.filter(r=>set.has(r.anoMes)); }
-  function summarize(rows){ const s={n:rows.length,valor:0,beneficiarios:0,contratos:0,valorAzul:0,beneficiariosAzul:0,contratosAzul:0,valorMulheres:0,beneficiariosMulheres:0,contratosMulheres:0,registros:0}; rows.forEach(r=>{ const v=+r.valor||0,b=+r.beneficiarios||0,c=+r.contratos||0; s.valor+=v; s.beneficiarios+=b; s.contratos+=c; s.registros+=(+r.registros||0); if(r.atividadeAzul==='Sim'){s.valorAzul+=v;s.beneficiariosAzul+=b;s.contratosAzul+=c;} if(r.sexo==='Mulheres'){s.valorMulheres+=v;s.beneficiariosMulheres+=b;s.contratosMulheres+=c;} }); derive(s); return s; }
-  function derive(s, prev=null){ s.shareAzulValor=safeDiv(s.valorAzul,s.valor); s.shareAzulBeneficiarios=safeDiv(s.beneficiariosAzul,s.beneficiarios); s.shareAzulContratos=safeDiv(s.contratosAzul,s.contratos); s.shareMulheresValor=safeDiv(s.valorMulheres,s.valor); s.shareMulheresBeneficiarios=safeDiv(s.beneficiariosMulheres,s.beneficiarios); s.shareMulheresContratos=safeDiv(s.contratosMulheres,s.contratos); s.ticketContrato=safeDiv(s.valor,s.contratos); s.ticketBeneficiario=safeDiv(s.valor,s.beneficiarios); s.beneficiariosPorContrato=safeDiv(s.beneficiarios,s.contratos); if(prev){ s.growthValor=prev.valor?(s.valor-prev.valor)/prev.valor:null; s.growthBeneficiarios=prev.beneficiarios?(s.beneficiarios-prev.beneficiarios)/prev.beneficiarios:null; s.growthContratos=prev.contratos?(s.contratos-prev.contratos)/prev.contratos:null; s.growthValorAzul=prev.valorAzul?(s.valorAzul-prev.valorAzul)/prev.valorAzul:null; s.growthBeneficiariosAzul=prev.beneficiariosAzul?(s.beneficiariosAzul-prev.beneficiariosAzul)/prev.beneficiariosAzul:null; s.growthContratosAzul=prev.contratosAzul?(s.contratosAzul-prev.contratosAzul)/prev.contratosAzul:null; s.ppAzulValor=(s.shareAzulValor??0)-(prev.shareAzulValor??0); s.ppAzulBeneficiarios=(s.shareAzulBeneficiarios??0)-(prev.shareAzulBeneficiarios??0); s.ppAzulContratos=(s.shareAzulContratos??0)-(prev.shareAzulContratos??0); } return s; }
-  const metric = (s,m) => s?.[m] ?? 0;
-  function group(rows, dim){ const map=new Map(); rows.forEach(r=>{ const label=dim==='municipio'?`${r.municipio} (${r.uf})`:r[dim]; const id=dim==='municipio'?r.codMun:label; if(!map.has(id)) map.set(id,{id,label,rows:[],codMun:r.codMun,uf:r.uf,macro:r.macro,tipologiaTerritorial:r.tipologiaTerritorial}); map.get(id).rows.push(r); }); return [...map.values()].map(g=>Object.assign(g,summarize(g.rows))); }
-  function groupWithGrowth(currRows, prevRows, dim){ const prevMap=new Map(group(prevRows,dim).map(g=>[g.id,g])); return group(currRows,dim).map(g=>derive(g, prevMap.get(g.id)||summarize([]))); }
-
   function initFilters(){
-    const periods=[...new Set(S.rows.map(r=>r.anoMes))].sort((a,b)=>periodIndex(a)-periodIndex(b)); fillSelect('filterMonth', periods, null); $('filterMonth').value=periods[periods.length-1];
-    fillSelect('filterFund',[...new Set(S.rows.map(r=>r.fundo))],'Todos'); fillSelect('filterMacro',[...new Set(S.rows.map(r=>r.macro))],'Todas'); fillSelect('filterUf',[...new Set(S.rows.map(r=>r.uf))],'Todas');
-    fillSelect('filterMunicipio',[...new Map(S.rows.map(r=>[r.codMun,`${r.municipio} (${r.uf})`])).entries()].map(([k,v])=>({k,v})), 'Todos');
-    // custom municipio select with code values
-    const mun=$('filterMunicipio'); mun.innerHTML='<option value="__all__">Todos</option>'; [...new Map(S.rows.filter(r=>r.elegivel).map(r=>[r.codMun,`${r.municipio} (${r.uf})`])).entries()].sort((a,b)=>a[1].localeCompare(b[1],'pt-BR')).forEach(([k,v])=>{ const o=document.createElement('option'); o.value=k; o.textContent=v; mun.appendChild(o); });
-    fillSelect('filterTipologia',[...new Set(S.rows.filter(r=>r.elegivel).map(r=>r.tipologiaTerritorial))],'Todas'); fillSelect('filterSetor',[...new Set(S.rows.map(r=>r.setor))],'Todos'); fillSelect('filterPrograma',[...new Set(S.rows.map(r=>r.programa))],'Todos'); fillSelect('filterLinha',[...new Set(S.rows.map(r=>r.linha))],'Todas'); fillSelect('filterAtividade',[...new Set(S.rows.map(r=>r.atividade))],'Todas'); fillSelect('filterCnae',[...new Set(S.rows.map(r=>r.cnae))],'Todas'); fillSelect('filterPorte',[...new Set(S.rows.map(r=>r.porte))],'Todos'); fillSelect('filterFinalidade',[...new Set(S.rows.map(r=>r.finalidade))],'Todas'); fillSelect('filterPfPj',[...new Set(S.rows.map(r=>r.pfPj))],'Todas'); fillSelect('filterSexo',[...new Set(S.rows.map(r=>r.sexo))],'Todos'); fillSelect('filterInstituicao',[...new Set(S.rows.map(r=>r.instituicao))],'Todas');
-    fillStaticSelect('rankingDimension', dimOptions); fillStaticSelect('rankingMetric', rankingMetrics);
-    populateBench();
-    [...document.querySelectorAll('select,input')].forEach(el=>el.addEventListener('change',render));
-    if($('btnRefresh')) $('btnRefresh').onclick=render;
-    if($('clearFilters')) $('clearFilters').onclick=clearFilters;
-    document.querySelectorAll('.tab-button').forEach(b=>b.addEventListener('click',()=>{ document.querySelectorAll('.tab-button').forEach(x=>x.classList.remove('active')); document.querySelectorAll('.tab-panel').forEach(x=>x.classList.remove('active')); b.classList.add('active'); $(b.dataset.tab).classList.add('active'); if(b.dataset.tab==='maps') setTimeout(renderMap,100); }));
+    state.months = state.meta.months.filter(m=>m!=='Não informado').sort();
+    fillSelect('f_mes', state.months, {all:false, labeler:Utils.formatMonth, defaultValue:state.months[state.months.length-1]});
+    for(const dim of state.filterDims){
+      let vals = (state.cube.dicts[dim]||[]).slice().filter(Boolean);
+      if(dim==='cod_mun') vals.sort((a,b)=>(state.munLabel.get(a)||a).localeCompare(state.munLabel.get(b)||b,'pt-BR'));
+      else vals.sort((a,b)=>String(a).localeCompare(String(b),'pt-BR'));
+      const id='f_'+dim;
+      fillSelect(id, vals, {labeler: dim==='cod_mun' ? v => state.munLabel.get(v)||v : undefined});
+    }
+    // enforce requested Sim/Não options for activity
+    fillSelect('f_atividade_vinculada_amazonia_azul', ['Sim','Não']);
+    fillSelect('rankDimension', Object.keys(labelDims), {all:false, labeler:v=>labelDims[v], defaultValue:'setor'});
+    fillSelect('rankIndicator', Object.keys(rankIndicators), {all:false, labeler:v=>rankIndicators[v], defaultValue:'valor'});
+    buildBenchmarkOptions();
+    document.querySelectorAll('select').forEach(s=>s.addEventListener('change', renderActive));
+    document.getElementById('clearFilters').addEventListener('click', () => { for(const dim of state.filterDims){ const el=document.getElementById('f_'+dim); if(el) el.value='__all__'; } document.getElementById('f_janela').value='1'; document.getElementById('f_mes').value=state.months[state.months.length-1]; renderActive(); });
+    document.getElementById('resetMap').addEventListener('click', MapController.reset);
   }
-  function populateBench(){ const opts=[['brasil','Brasil']]; ['Norte','Nordeste','Centro-Oeste','Sudeste','Sul'].forEach(x=>opts.push([`macro:${x}`,x])); [...new Set(S.rows.map(r=>r.uf))].sort().forEach(x=>opts.push([`uf:${x}`,`UF ${x}`])); [...new Map(S.rows.filter(r=>r.elegivel).map(r=>[r.codMun,`${r.municipio} (${r.uf})`])).entries()].sort((a,b)=>a[1].localeCompare(b[1],'pt-BR')).forEach(([k,v])=>opts.push([`mun:${k}`,v])); [...new Set(S.rows.filter(r=>r.elegivel).map(r=>r.tipologiaTerritorial))].sort().forEach(x=>opts.push([`tip:${x}`,`Tipologia ${x}`])); fillStaticSelect('benchMain',opts); fillStaticSelect('benchRef',opts); $('benchRef').value='brasil'; }
-  function clearFilters(){ ['filterFund','filterMacro','filterUf','filterMunicipio','filterTipologia','filterAtividadeAzul','filterSetor','filterPrograma','filterLinha','filterAtividade','filterCnae','filterPorte','filterFinalidade','filterPfPj','filterSexo','filterInstituicao'].forEach(id=>$(id).value=all); render(); }
-
-  function card(title, value, note){ return `<article class="card"><h3>${title}</h3><strong>${value}</strong>${note?`<p>${note}</p>`:''}</article>`; }
-  function renderCards(elig, allsum){ $('cards').innerHTML = [
-    card('Valor total nos municípios elegíveis',fmtBRL(elig.valor),`${fmtNum(elig.registros)} registros agregados públicos`),
-    card('Beneficiários totais nos municípios elegíveis',fmtNum(elig.beneficiarios),''),
-    card('Contratos totais nos municípios elegíveis',fmtNum(elig.contratos),''),
-    card('Valor em atividades Amazônia Azul',fmtBRL(elig.valorAzul),`${fmtPct(elig.shareAzulValor)} do total nos municípios elegíveis`),
-    card('Beneficiários em atividades Amazônia Azul',fmtNum(elig.beneficiariosAzul),`${fmtPct(elig.shareAzulBeneficiarios)} do total nos municípios elegíveis`),
-    card('Contratos em atividades Amazônia Azul',fmtNum(elig.contratosAzul),`${fmtPct(elig.shareAzulContratos)} do total nos municípios elegíveis`),
-    card('Participação feminina no valor',fmtPct(elig.shareMulheresValor),'Registros identificados como mulheres no numerador'),
-    card('Participação feminina nos beneficiários',fmtPct(elig.shareMulheresBeneficiarios),''),
-    card('Participação feminina nos contratos',fmtPct(elig.shareMulheresContratos),'')
-  ].join(''); }
-  function renderNarrative(elig, allsum, generalEligible){ const f=filters(); $('selectionPill').textContent=`${monthLabel(f.month)} • ${f.window} mês(es)`; $('autoNarrative').textContent = `Na janela selecionada, os municípios elegíveis ao Programa Amazônia Azul somaram ${fmtBRL(elig.valor)}, ${fmtNum(elig.beneficiarios)} beneficiários e ${fmtNum(elig.contratos)} contratos. Dentro desses municípios, as atividades vinculadas à Amazônia Azul responderam por ${fmtBRL(elig.valorAzul)}, equivalentes a ${fmtPct(elig.shareAzulValor)} do valor contratado, ${fmtPct(elig.shareAzulBeneficiarios)} dos beneficiários e ${fmtPct(elig.shareAzulContratos)} dos contratos. Considerando o total geral da base, os municípios elegíveis representaram ${fmtPct(generalEligible.shareValorElegivel)} do valor contratado e as atividades Amazônia Azul representaram ${fmtPct(generalEligible.shareValorAzulGeral)} do valor total.`; }
-
-  function plotBar(id, x, y, title, metricName){ Plotly.react(id,[{type:'bar',x,y,hovertemplate:'%{x}<br>%{y}<extra></extra>'}],{title:{text:title,font:{size:14}},margin:{l:55,r:15,t:55,b:80},yaxis:{tickformat:pctMetrics.has(metricName)?'.1%':undefined},paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)'},{displayModeBar:false,responsive:true}); }
-  function plotLine(id, x, y, name, metricName){ Plotly.react(id,[{type:'scatter',mode:'lines+markers',x,y,name,hovertemplate:'%{x}<br>%{y}<extra></extra>'}],{title:{text:name,font:{size:14}},margin:{l:55,r:15,t:55,b:70},yaxis:{tickformat:pctMetrics.has(metricName)?'.1%':undefined},paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)'},{displayModeBar:false,responsive:true}); }
-  function renderTrend(base, f){ const mode=$('trendMode').value; const periods=[...periodRange(f.month,f.window)].sort((a,b)=>periodIndex(a)-periodIndex(b)); const total=summarize(base.filter(r=>periods.includes?false:true)); const winRows=inWindow(base,f); const denom=summarize(winRows); ['valor','beneficiarios','contratos'].forEach(m=>{ const vals=periods.map(p=>summarize(base.filter(r=>r.anoMes===p))); const y=vals.map(s=>mode==='share' ? safeDiv(metric(s,m), metric(denom,m))||0 : metric(s,m)); plotLine(`trend${m==='valor'?'Valor':m==='beneficiarios'?'Beneficiarios':'Contratos'}`, periods.map(monthLabel), y, metricLabels[m], mode==='share'?'share':m); }); }
-  function renderTerritory(f){ const base=baseRows(f,{ignoreTerritory:true}); const win=inWindow(base,f); const rows=[]; rows.push(['Brasil',summarize(win)]); ['Norte','Nordeste','Centro-Oeste','Sudeste','Sul'].forEach(m=>rows.push([m,summarize(win.filter(r=>r.macro===m))])); if(f.uf!==all) rows.push([`UF ${f.uf}`,summarize(win.filter(r=>r.uf===f.uf))]); if(f.municipio!==all){ const label=(S.rows.find(r=>r.codMun===f.municipio)||{}).municipio || f.municipio; rows.push([label,summarize(win.filter(r=>r.codMun===f.municipio))]); } const denom=summarize(win); const mode=$('territoryMode').value; ['valor','beneficiarios','contratos'].forEach(m=>{ const y=rows.map(([_,s])=>mode==='share' ? safeDiv(metric(s,m),metric(denom,m))||0 : metric(s,m)); plotBar(`territory${m==='valor'?'Valor':m==='beneficiarios'?'Beneficiarios':'Contratos'}`, rows.map(r=>r[0]), y, metricLabels[m], mode==='share'?'share':m); }); }
-  function renderEligibleTotal(allWin){ const elig=summarize(allWin.filter(r=>r.elegivel)); const allsum=summarize(allWin); const gen={shareValorElegivel:safeDiv(elig.valor,allsum.valor),shareBenefElegivel:safeDiv(elig.beneficiarios,allsum.beneficiarios),shareContrElegivel:safeDiv(elig.contratos,allsum.contratos),shareValorAzulGeral:safeDiv(allsum.valorAzul,allsum.valor),shareBenefAzulGeral:safeDiv(allsum.beneficiariosAzul,allsum.beneficiarios),shareContrAzulGeral:safeDiv(allsum.contratosAzul,allsum.contratos)}; $('eligibleTotalCards').innerHTML=[card('Municípios elegíveis: valor',fmtPct(gen.shareValorElegivel),fmtBRL(elig.valor)+' de '+fmtBRL(allsum.valor)),card('Municípios elegíveis: beneficiários',fmtPct(gen.shareBenefElegivel),fmtNum(elig.beneficiarios)+' de '+fmtNum(allsum.beneficiarios)),card('Municípios elegíveis: contratos',fmtPct(gen.shareContrElegivel),fmtNum(elig.contratos)+' de '+fmtNum(allsum.contratos)),card('Atividades Amazônia Azul no total geral',fmtPct(gen.shareValorAzulGeral),fmtBRL(allsum.valorAzul)+' de '+fmtBRL(allsum.valor))].join(''); Plotly.react('eligibleTotalChart',[{type:'bar',name:'Municípios elegíveis',x:['Valor','Beneficiários','Contratos'],y:[gen.shareValorElegivel,gen.shareBenefElegivel,gen.shareContrElegivel]},{type:'bar',name:'Atividades Amazônia Azul no total geral',x:['Valor','Beneficiários','Contratos'],y:[gen.shareValorAzulGeral,gen.shareBenefAzulGeral,gen.shareContrAzulGeral]}],{barmode:'group',margin:{l:55,r:20,t:20,b:60},yaxis:{tickformat:'.1%'},paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)'},{displayModeBar:false,responsive:true}); return gen; }
-
-  function renderRanking(curr, prev){ const dim=$('rankingDimension').value, m=$('rankingMetric').value; const data=groupWithGrowth(curr,prev,dim).filter(g=>g.label && g.label!=='Não informado'); const sorted=[...data].sort((a,b)=>(metric(b,m)||0)-(metric(a,m)||0)); const top=sorted.slice(0,10); const bottom=sorted.filter(g=>metric(g,m)!=null && isFinite(metric(g,m))).slice(-10).reverse(); plotBar('topRanking',top.map(g=>g.label),top.map(g=>metric(g,m)||0),`Top 10 • ${metricLabels[m]||m}`,m); plotBar('bottomRanking',bottom.map(g=>g.label),bottom.map(g=>metric(g,m)||0),`Bottom 10 • ${metricLabels[m]||m}`,m); const rows=sorted.slice(0,100).map(g=>({'Dimensão':g.label,'Valor':fmtBRL(g.valor),'Beneficiários':fmtNum(g.beneficiarios),'Contratos':fmtNum(g.contratos),'% valor Azul':fmtPct(g.shareAzulValor),'% beneficiários Azul':fmtPct(g.shareAzulBeneficiarios),'% contratos Azul':fmtPct(g.shareAzulContratos),'% valor mulheres':fmtPct(g.shareMulheresValor),'% beneficiários mulheres':fmtPct(g.shareMulheresBeneficiarios),'% contratos mulheres':fmtPct(g.shareMulheresContratos),'Indicador ordenado':fmtVal(m,metric(g,m))})); renderPlainTable('rankingTable',rows); }
-  function renderKeyIndicators(baseElig, currElig, prevElig){ const byTip=group(currElig,'tipologiaTerritorial').sort((a,b)=>a.label.localeCompare(b.label,'pt-BR')); const mode=$('tipologyMode').value; const total=summarize(currElig); const traces=['valor','beneficiarios','contratos'].map(m=>({type:'bar',name:metricLabels[m],x:byTip.map(g=>g.label),y:byTip.map(g=> mode==='abs'?metric(g,m): mode==='shareInside'? (m==='valor'?g.shareAzulValor:m==='beneficiarios'?g.shareAzulBeneficiarios:g.shareAzulContratos) : safeDiv(metric(g,m),metric(total,m))||0)})); Plotly.react('tipologyChart',traces,{barmode:'group',margin:{l:60,r:20,t:25,b:90},yaxis:{tickformat:mode==='abs'?undefined:'.1%'},paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)'},{displayModeBar:false,responsive:true});
-    const level=$('growthLevel').value; const inc=groupWithGrowth(currElig,prevElig,level); const countAbs=m=>inc.filter(g=>metric(g,m)>metric((group(prevElig,level).find(x=>x.id===g.id)||{}),m)).length; const countShare=m=>inc.filter(g=>(g[m]||0)>0).length; $('increaseCards').innerHTML=[card('Aumentaram valor absoluto',fmtNum(inc.filter(g=>g.growthValorAzul>0).length),'atividades vinculadas à Amazônia Azul'),card('Aumentaram beneficiários',fmtNum(inc.filter(g=>g.growthBeneficiariosAzul>0).length),''),card('Aumentaram contratos',fmtNum(inc.filter(g=>g.growthContratosAzul>0).length),''),card('Aumentaram participação no valor',fmtNum(inc.filter(g=>g.ppAzulValor>0).length),'pontos percentuais'),card('Aumentaram participação nos beneficiários',fmtNum(inc.filter(g=>g.ppAzulBeneficiarios>0).length),''),card('Aumentaram participação nos contratos',fmtNum(inc.filter(g=>g.ppAzulContratos>0).length),'')].join(''); renderPlainTable('increaseTable',inc.sort((a,b)=>(b.growthValor||-99)-(a.growthValor||-99)).slice(0,50).map(g=>({'Território':g.label,'Crescimento valor Azul':fmtPct(g.growthValorAzul),'Crescimento beneficiários Azul':fmtPct(g.growthBeneficiariosAzul),'Crescimento contratos Azul':fmtPct(g.growthContratosAzul),'Δ p.p. valor Azul':fmtPct(g.ppAzulValor),'Δ p.p. benef. Azul':fmtPct(g.ppAzulBeneficiarios),'Δ p.p. contratos Azul':fmtPct(g.ppAzulContratos),'Classificação':g.growthValor>0?'Aumentou':g.growthValor<0?'Reduziu':'Estável'})));
-    renderTipologyTrend(baseElig); renderBenchmark(currElig);
+  function windowInfo(){ return Transforms.getWindowMonths(state.months, document.getElementById('f_mes').value, Number(document.getElementById('f_janela').value||1)); }
+  function currentFilters(extra={}, opts={}){ return {...Transforms.getActiveFilters(state, opts), ...extra}; }
+  function idxFor(filters, months){ return Transforms.indices(state, filters, months); }
+  function agg(filters, months){ return Transforms.aggregateIndices(state, idxFor(filters, months)); }
+  function renderCards(){
+    const {current, previous, previousComplete}=windowInfo();
+    const base=currentFilters();
+    const eleg=agg({...base,elegivel_amazonia_azul:'Sim'}, current);
+    const all=agg(base,current);
+    const azulEleg=agg({...base,elegivel_amazonia_azul:'Sim',atividade_vinculada_amazonia_azul:'Sim'}, current);
+    const fem=agg({...base,elegivel_amazonia_azul:'Sim',sexo_padronizado:'Mulheres'}, current);
+    const cards=[
+      Utils.makeCard('Valor contratado total nos municípios elegíveis', Utils.formatBRL(eleg.valor), 'Total da janela selecionada'),
+      Utils.makeCard('Beneficiários totais nos municípios elegíveis', Utils.formatNumber(eleg.beneficiarios), 'Soma agregada da base pública'),
+      Utils.makeCard('Contratos totais nos municípios elegíveis', Utils.formatNumber(eleg.contratos), 'Soma agregada da base pública'),
+      Utils.makeCard('Valor contratado em atividades Amazônia Azul', Utils.formatBRL(azulEleg.valor), `${Utils.formatPercent(Utils.pct(azulEleg.valor,eleg.valor))} do total nos municípios elegíveis`),
+      Utils.makeCard('Beneficiários em atividades Amazônia Azul', Utils.formatNumber(azulEleg.beneficiarios), `${Utils.formatPercent(Utils.pct(azulEleg.beneficiarios,eleg.beneficiarios))} do total nos municípios elegíveis`),
+      Utils.makeCard('Contratos em atividades Amazônia Azul', Utils.formatNumber(azulEleg.contratos), `${Utils.formatPercent(Utils.pct(azulEleg.contratos,eleg.contratos))} do total nos municípios elegíveis`),
+      Utils.makeCard('Participação feminina no valor', Utils.formatPercent(Utils.pct(fem.valor,eleg.valor)), 'Pessoas jurídicas e não informados permanecem no denominador'),
+      Utils.makeCard('Participação feminina nos beneficiários', Utils.formatPercent(Utils.pct(fem.beneficiarios,eleg.beneficiarios)), 'Numerador: sexo padronizado como Mulheres'),
+      Utils.makeCard('Participação feminina nos contratos', Utils.formatPercent(Utils.pct(fem.contratos,eleg.contratos)), 'Numerador: sexo padronizado como Mulheres')
+    ];
+    document.getElementById('mainCards').innerHTML=cards.join('');
+    const azulAll=agg({...base,atividade_vinculada_amazonia_azul:'Sim'}, current);
+    document.getElementById('shareCards').innerHTML=[
+      Utils.makeCard('Municípios elegíveis no valor total', Utils.formatPercent(Utils.pct(eleg.valor,all.valor)), `${Utils.formatBRL(eleg.valor)} de ${Utils.formatBRL(all.valor)}`),
+      Utils.makeCard('Municípios elegíveis nos beneficiários', Utils.formatPercent(Utils.pct(eleg.beneficiarios,all.beneficiarios)), `${Utils.formatNumber(eleg.beneficiarios)} de ${Utils.formatNumber(all.beneficiarios)}`),
+      Utils.makeCard('Atividades Amazônia Azul no valor total', Utils.formatPercent(Utils.pct(azulAll.valor,all.valor)), `${Utils.formatBRL(azulAll.valor)} do total geral`),
+      Utils.makeCard('Atividades Amazônia Azul nos contratos', Utils.formatPercent(Utils.pct(azulAll.contratos,all.contratos)), `${Utils.formatNumber(azulAll.contratos)} do total geral`)
+    ].join('');
+    const territory = document.getElementById('f_cod_mun').value!=='__all__' ? state.munLabel.get(document.getElementById('f_cod_mun').value) : (document.getElementById('f_uf').value!=='__all__'?document.getElementById('f_uf').value:'seleção atual');
+    document.getElementById('selectionNarrative').innerHTML = `Na <strong>${territory}</strong>, para a janela de referência encerrada em <strong>${Utils.formatMonth(document.getElementById('f_mes').value)}</strong>, os municípios elegíveis somaram <strong>${Utils.formatBRL(eleg.valor)}</strong>, <strong>${Utils.formatNumber(eleg.beneficiarios)}</strong> beneficiários e <strong>${Utils.formatNumber(eleg.contratos)}</strong> contratos. As atividades vinculadas à Amazônia Azul responderam por <strong>${Utils.formatPercent(Utils.pct(azulEleg.valor,eleg.valor))}</strong> do valor contratado nos municípios elegíveis. Os municípios elegíveis representaram <strong>${Utils.formatPercent(Utils.pct(eleg.valor,all.valor))}</strong> do valor total da base filtrada, enquanto as atividades Amazônia Azul representaram <strong>${Utils.formatPercent(Utils.pct(azulAll.valor,all.valor))}</strong> do total geral. A participação feminina no valor contratado dos municípios elegíveis foi de <strong>${Utils.formatPercent(Utils.pct(fem.valor,eleg.valor))}</strong>.`;
+    Charts.groupedBar('chart_shares', ['Valor','Beneficiários','Contratos'], [
+      {name:'Municípios elegíveis / total geral', values:[Utils.pct(eleg.valor,all.valor),Utils.pct(eleg.beneficiarios,all.beneficiarios),Utils.pct(eleg.contratos,all.contratos)], color:'#176b93'},
+      {name:'Atividades Amazônia Azul / total geral', values:[Utils.pct(azulAll.valor,all.valor),Utils.pct(azulAll.beneficiarios,all.beneficiarios),Utils.pct(azulAll.contratos,all.contratos)], color:'#16a6a3'}
+    ], 'Participações no total geral da base filtrada', {tickformat:'.0%'});
   }
-  function renderTipologyTrend(baseElig){ const m=$('tipologyTrendMetric').value, mode=$('tipologyTrendMode').value; const periods=[...new Set(baseElig.map(r=>r.anoMes))].sort((a,b)=>periodIndex(a)-periodIndex(b)); const tips=[...new Set(baseElig.map(r=>r.tipologiaTerritorial))].sort(); const traces=tips.map(t=>{ const vals=periods.map(p=>summarize(baseElig.filter(r=>r.tipologiaTerritorial===t && r.anoMes===p))); let y=vals.map(s=>metric(s,m)||0); if(mode==='index'){ const first=y.find(v=>v>0)||null; y=y.map(v=>first?100*v/first:null); } return {type:'scatter',mode:'lines+markers',name:t,x:periods.map(monthLabel),y}; }); Plotly.react('tipologyTrend',traces,{margin:{l:60,r:20,t:20,b:60},yaxis:{tickformat:mode==='share'||pctMetrics.has(m)?'.1%':undefined},paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)'},{displayModeBar:false,responsive:true}); }
-  function rowsForBench(sel, currElig){ if(sel==='brasil') return currElig; const [typ,val]=sel.split(':'); if(typ==='macro') return currElig.filter(r=>r.macro===val); if(typ==='uf') return currElig.filter(r=>r.uf===val); if(typ==='mun') return currElig.filter(r=>r.codMun===val); if(typ==='tip') return currElig.filter(r=>r.tipologiaTerritorial===val); return currElig; }
-  function renderBenchmark(currElig){ const a=summarize(rowsForBench($('benchMain').value,currElig)), b=summarize(rowsForBench($('benchRef').value,currElig)); const mets=['valor','valorAzul','beneficiarios','beneficiariosAzul','contratos','contratosAzul','shareAzulValor','shareAzulBeneficiarios','shareAzulContratos','shareMulheresValor','shareMulheresBeneficiarios','shareMulheresContratos']; const rows=mets.map(m=>{ const av=metric(a,m), bv=metric(b,m), diff=av-bv, rel=bv?diff/bv:null; return {'Indicador':metricLabels[m]||m,'Território selecionado':fmtVal(m,av),'Benchmark':fmtVal(m,bv),'Diferença absoluta':fmtVal(m,diff),'Diferença relativa':fmtPct(rel),'Diferença p.p.':pctMetrics.has(m)?fmtPct(diff):'N.A.'}; }); $('benchmarkCards').innerHTML=[card('Diferença de valor',fmtBRL(a.valor-b.valor),fmtPct(b.valor?(a.valor-b.valor)/b.valor:null)+' frente ao benchmark'),card('Diferença de % valor Azul',fmtPct((a.shareAzulValor??0)-(b.shareAzulValor??0)),'pontos percentuais'),card('Diferença de % valor mulheres',fmtPct((a.shareMulheresValor??0)-(b.shareMulheresValor??0)),'pontos percentuais')].join(''); renderPlainTable('benchmarkTable',rows); }
-
-  function renderTable(){ const f=filters(); const curr=inWindow(baseRows(f),f).filter(r=>r.elegivel); const prev=inWindow(baseRows(f),f,true).filter(r=>r.elegivel); const level=$('tableLevel').value; let rows; if(level==='registro'){ rows=curr.slice(0,500).map(r=>formatRecordRow(r)); } else { rows=groupWithGrowth(curr,prev,level).map(g=>formatAggRow(g)); } const q=($('tableSearch').value||'').toLowerCase(); if(q) rows=rows.filter(r=>Object.values(r).join(' ').toLowerCase().includes(q)); S.currentTable=rows; $('tableInfo').textContent=`${rows.length.toLocaleString('pt-BR')} linhas exibidas. Dados agregados; a base bruta não é publicada.`; renderPlainTable('analyticTable',rows.slice(0,500)); }
-  function formatRecordRow(r){ return {'Mês':monthLabel(r.anoMes),'UF':r.uf,'Município':`${r.municipio} (${r.codMun})`,'Tipologia territorial':r.tipologiaTerritorial,'Atividade Azul':r.atividadeAzul,'Setor':r.setor,'Programa':r.programa,'CNAE':r.cnae,'Valor':fmtBRL(r.valor),'Beneficiários':fmtNum(r.beneficiarios),'Contratos':fmtNum(r.contratos),'Registros agregados':fmtNum(r.registros)}; }
-  function formatAggRow(g){ return {'Dimensão':g.label,'Valor total':fmtBRL(g.valor),'Valor Amazônia Azul':fmtBRL(g.valorAzul),'Beneficiários totais':fmtNum(g.beneficiarios),'Beneficiários Amazônia Azul':fmtNum(g.beneficiariosAzul),'Contratos totais':fmtNum(g.contratos),'Contratos Amazônia Azul':fmtNum(g.contratosAzul),'% valor Azul':fmtPct(g.shareAzulValor),'% beneficiários Azul':fmtPct(g.shareAzulBeneficiarios),'% contratos Azul':fmtPct(g.shareAzulContratos),'Valor mulheres':fmtBRL(g.valorMulheres),'% valor mulheres':fmtPct(g.shareMulheresValor),'% beneficiários mulheres':fmtPct(g.shareMulheresBeneficiarios),'% contratos mulheres':fmtPct(g.shareMulheresContratos),'Valor médio/contrato':fmtBRL(g.ticketContrato),'Valor médio/beneficiário':fmtBRL(g.ticketBeneficiario),'Crescimento valor Azul':fmtPct(g.growthValorAzul),'Crescimento beneficiários Azul':fmtPct(g.growthBeneficiariosAzul),'Crescimento contratos Azul':fmtPct(g.growthContratosAzul),'Δ p.p. valor Azul':fmtPct(g.ppAzulValor),'Classificação':g.growthValor>0?'Aumentou':g.growthValor<0?'Reduziu':g.growthValor===null?'Sem base anterior':'Estável'}; }
-  function renderPlainTable(id, rows){ const el=$(id); if(!el) return; if(!rows.length){ el.innerHTML='<tbody><tr><td>Nenhum dado para a seleção.</td></tr></tbody>'; return; } const cols=Object.keys(rows[0]); el.className='data-table'; el.innerHTML='<thead><tr>'+cols.map(c=>`<th>${c}</th>`).join('')+'</tr></thead><tbody>'+rows.map(r=>'<tr>'+cols.map(c=>`<td>${r[c]??''}</td>`).join('')+'</tr>').join('')+'</tbody>'; }
-  function downloadCSV(rows, name){ if(!rows.length) return; const cols=Object.keys(rows[0]); const csv=[cols.join(';')].concat(rows.map(r=>cols.map(c=>`"${String(r[c]??'').replace(/"/g,'""')}"`).join(';'))).join('\n'); const blob=new Blob([csv],{type:'text/csv;charset=utf-8'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); URL.revokeObjectURL(a.href); }
-
-  async function renderMap(){ const f=filters(); const curr=inWindow(baseRows(f),f).filter(r=>r.elegivel); const prev=inWindow(baseRows(f),f,true).filter(r=>r.elegivel); const agg=new Map(groupWithGrowth(curr,prev,'municipio').map(g=>[String(g.codMun||g.id),g])); if(!S.map){ S.map=L.map('map',{scrollWheelZoom:true}).setView([-14.2,-51.9],4); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap'}).addTo(S.map); $('resetMap').onclick=()=>S.map.setView([-14.2,-51.9],4); }
-    if(S.munLayer) S.map.removeLayer(S.munLayer); if(S.ufLayer) S.map.removeLayer(S.ufLayer); let mun=await loadGeo(S.manifest.geo.municipios); let ufs=await loadGeo(S.manifest.geo.ufs); const m=$('mapIndicator').value; const vals=[...agg.values()].map(g=>metric(g,m)).filter(v=>v!=null&&isFinite(v)); const max=Math.max(...vals,0), min=Math.min(...vals,0); const color=v=>{ if(v==null) return '#e5e7eb'; if(m.includes('growth')) return v>0?'#2563eb':v<0?'#dc2626':'#94a3b8'; const t=max?Math.max(0,Math.min(1,v/max)):0; return `rgb(${220-Math.round(120*t)},${235-Math.round(100*t)},${245-Math.round(40*t)})`; };
-    S.munLayer=L.geoJSON(mun,{style:ft=>{ const cod=String(ft.properties.codigo_ibge||ft.properties.CD_MUN||ft.id); const g=agg.get(cod); return {color:'#94a3b8',weight:.6,fillColor:color(g?metric(g,m):null),fillOpacity:g?.valor?0.75:0.25}; },onEachFeature:(ft,ly)=>{ const cod=String(ft.properties.codigo_ibge||ft.properties.CD_MUN||ft.id); const g=agg.get(cod); ly.bindTooltip(g?`<b>${g.label}</b><br>Tipologia: ${g.tipologiaTerritorial}<br>${metricLabels[m]||m}: ${fmtVal(m,metric(g,m))}<br>Valor: ${fmtBRL(g.valor)}<br>Beneficiários: ${fmtNum(g.beneficiarios)}<br>Contratos: ${fmtNum(g.contratos)}<br>% valor Azul: ${fmtPct(g.shareAzulValor)}<br>% valor mulheres: ${fmtPct(g.shareMulheresValor)}`:`Município sem dados na seleção`); }}).addTo(S.map);
-    S.ufLayer=L.geoJSON(ufs,{style:{color:'#0f172a',weight:1.8,fillOpacity:0,interactive:false}}).addTo(S.map); try{ S.map.fitBounds(S.munLayer.getBounds(),{padding:[20,20]}); }catch(e){} $('mapLegend').textContent=`Legenda: ${metricLabels[m]||m}. Arquivos geográficos carregados localmente de data/geo/.`; }
-  async function loadGeo(url){ const g=await json(url); if(g.type==='Topology' && window.topojson){ const key=Object.keys(g.objects)[0]; return topojson.feature(g,g.objects[key]); } return g; }
-
-  async function renderMethodology(){ try{ const txt=await fetch('metodologia/metodologia.md').then(r=>r.text()); $('methodologyContent').innerHTML=window.marked?marked.parse(txt):txt; }catch(e){ $('methodologyContent').textContent='Não foi possível carregar metodologia/metodologia.md'; } }
-  function render(){ const f=filters(); const baseAll=baseRows(f); const currAll=inWindow(baseAll,f); const prevAll=inWindow(baseAll,f,true); const currElig=currAll.filter(r=>r.elegivel); const prevElig=prevAll.filter(r=>r.elegivel); const sElig=derive(summarize(currElig),summarize(prevElig)); const sAll=summarize(currAll); renderCards(sElig,sAll); const gen=renderEligibleTotal(currAll); renderNarrative(sElig,sAll,gen); renderTrend(baseRows(f).filter(r=>r.elegivel),f); renderTerritory(f); renderRanking(currElig,prevElig); renderKeyIndicators(baseRows(f).filter(r=>r.elegivel),currElig,prevElig); if($('maps').classList.contains('active')) renderMap(); }
-  async function main(){ try{ await loadData(); initFilters(); await renderMethodology(); document.querySelectorAll('select').forEach(el=>el.addEventListener('change',()=>{ if(el.id==='filterUf'){ const uf=el.value; const rows=S.rows.filter(r=>r.elegivel && (uf===all || r.uf===uf)); const mun=$('filterMunicipio'); const old=mun.value; mun.innerHTML='<option value="__all__">Todos</option>'; [...new Map(rows.map(r=>[r.codMun,`${r.municipio} (${r.uf})`])).entries()].sort((a,b)=>a[1].localeCompare(b[1],'pt-BR')).forEach(([k,v])=>{ const o=document.createElement('option'); o.value=k; o.textContent=v; mun.appendChild(o); }); if([...mun.options].some(o=>o.value===old)) mun.value=old; } })); render(); $('loadingOverlay').style.display='none'; }catch(e){ console.error(e); $('loadingStep').textContent=e.message; $('alerts').innerHTML=`<div class="alert error">${e.message}</div>`; } }
-  main();
+  function renderTemporal(){
+    const {current}=windowInfo(); const filters=currentFilters(); const monthly=Transforms.aggregateMonthly(state, filters).filter(d=>current.includes(d.month)); const mode=document.getElementById('temporalMode').value;
+    for(const m of ['valor','beneficiarios','contratos']){
+      const total=monthly.reduce((s,d)=>s+(d[m]||0),0); const y=monthly.map(d=> mode==='share' ? Utils.pct(d[m],total) : d[m]);
+      Charts.line('chart_ts_'+m, [{x:monthly.map(d=>Utils.formatMonth(d.month)), y, name:Utils.metricLabel(m), line:{color:'#176b93'}}], `Evolução mensal — ${Utils.metricLabel(m)}`, {tickformat: mode==='share'?'.0%':''});
+    }
+  }
+  function renderTerritoryComparison(){
+    const {current}=windowInfo(); const base=currentFilters({}, {ignoreTerritory:true}); const mode=document.getElementById('territoryMode').value;
+    const territories=[['Brasil',{}],['Norte',{macrorregiao_geografica:'Norte'}],['Nordeste',{macrorregiao_geografica:'Nordeste'}],['Centro-Oeste',{macrorregiao_geografica:'Centro-Oeste'}],['Sudeste',{macrorregiao_geografica:'Sudeste'}],['Sul',{macrorregiao_geografica:'Sul'}]];
+    const uf=document.getElementById('f_uf').value, mun=document.getElementById('f_cod_mun').value;
+    if(uf!=='__all__') territories.push([uf,{uf}]);
+    if(mun!=='__all__') territories.push([state.munLabel.get(mun)||mun,{cod_mun:mun}]);
+    for(const metric of ['valor','beneficiarios','contratos']){
+      const vals=territories.map(([_,extra])=>agg({...base,...extra},current)[metric]); const total=vals.reduce((a,b)=>a+b,0); const y=mode==='share'?vals.map(v=>Utils.pct(v,total)):vals;
+      Charts.bar('chart_terr_'+metric, territories.map(t=>t[0]), y, `Comparação territorial — ${Utils.metricLabel(metric)}`, {tickformat:mode==='share'?'.0%':''});
+    }
+  }
+  function renderOverview(){ renderCards(); renderTemporal(); renderTerritoryComparison(); }
+  function rankValue(ind, cur, prev){
+    if(ind.startsWith('abs_growth_')){ const m=ind.replace('abs_growth_',''); return (cur[m]||0)-(prev[m]||0); }
+    if(ind.startsWith('pct_growth_')){ const m=ind.replace('pct_growth_',''); return prev[m] ? ((cur[m]||0)-(prev[m]||0))/prev[m] : null; }
+    return Transforms.derived(cur, ind);
+  }
+  function renderRankings(){
+    const dim=document.getElementById('rankDimension').value, ind=document.getElementById('rankIndicator').value; const {current,previous}=windowInfo(); const filters=currentFilters();
+    const comps=Transforms.comparePeriodsBy(state, filters, dim, current, previous).map(d=>({label: dim==='cod_mun'?(state.munLabel.get(d.key)||d.key):d.key, value:rankValue(ind,d.current,d.previous)})).filter(d=>d.value!==null && d.value!==undefined && !Number.isNaN(d.value) && String(d.label).trim()!=='' && d.label!=='Não informado');
+    const top=comps.slice().sort((a,b)=>b.value-a.value).slice(0,10).reverse(); const bottom=comps.slice().filter(d=>d.value!==0).sort((a,b)=>a.value-b.value).slice(0,10).reverse();
+    const tick = ind.includes('share')||ind.includes('pct_growth') ? '.0%' : '';
+    Charts.hbar('chart_rank_top', top.map(d=>d.label), top.map(d=>d.value), `Top 10 — ${rankIndicators[ind]}`, {tickformat:tick,color:'#176b93'});
+    Charts.hbar('chart_rank_bottom', bottom.map(d=>d.label), bottom.map(d=>d.value), `Bottom 10 — ${rankIndicators[ind]}`, {tickformat:tick,color:'#d97706'});
+  }
+  function renderTipologyParticipation(){
+    const mode=document.getElementById('tipologyMode').value; const {current}=windowInfo(); const map=Transforms.aggregateBy(state, idxFor(currentFilters(),current), 'tipologia_territorial_amazonia_azul'); const labels=[...map.keys()].filter(k=>k!=='Não elegível').sort(); const total=Transforms.aggregateIndices(state, idxFor(currentFilters(),current));
+    for(const metric of ['valor','beneficiarios','contratos']){
+      const vals=labels.map(l=>{ const a=map.get(l)||Utils.empty(); if(mode==='shareTotal') return Utils.pct(a[metric], total[metric]); if(mode==='shareTip') return Utils.pct(a[metric+'_azul'], a[metric]); return a[metric]; });
+      Charts.bar('chart_tip_'+metric, labels, vals, `${Utils.metricLabel(metric)} por tipologia`, {tickformat:mode==='abs'?'':'.0%'});
+    }
+  }
+  function renderIncrease(){
+    const lvl=document.getElementById('increaseLevel').value, metric=document.getElementById('increaseMetric').value; const {current,previous,previousComplete}=windowInfo(); const filters={...currentFilters(),atividade_vinculada_amazonia_azul:'Sim'};
+    const comps=Transforms.comparePeriodsBy(state, filters, lvl, current, previous); const counts={Aumentou:0,Reduziu:0,Estável:0,'Sem base anterior':0};
+    for(const d of comps){ const c=d.current[metric]||0, p=d.previous[metric]||0; if(!previousComplete||p===0) counts['Sem base anterior']++; else if(c>p) counts.Aumentou++; else if(c<p) counts.Reduziu++; else counts.Estável++; }
+    document.getElementById('increaseCards').innerHTML=Object.entries(counts).map(([k,v])=>Utils.makeCard(k,Utils.formatNumber(v),`${labelDims[lvl]||lvl}`)).join('');
+    Charts.bar('chart_increase', Object.keys(counts), Object.values(counts), `Classificação da variação — ${Utils.metricLabel(metric)}`);
+  }
+  function renderEvoTipology(){
+    const metric=document.getElementById('evoTipMetric').value; const filters=currentFilters(); const idxs=idxFor(filters,null); const monthlyTip=new Map();
+    for(const i of idxs){ const m=Transforms.getVal(state,'ano_mes',i), tip=Transforms.getVal(state,'tipologia_territorial_amazonia_azul',i); if(tip==='Não elegível') continue; const key=m+'|'+tip; if(!monthlyTip.has(key)) monthlyTip.set(key, Utils.empty()); const a=monthlyTip.get(key), valor=Transforms.rowMetric(state,'valor',i), ben=Transforms.rowMetric(state,'beneficiarios',i), cont=Transforms.rowMetric(state,'contratos',i); a.valor+=valor; a.beneficiarios+=ben; a.contratos+=cont; if(Transforms.getVal(state,'atividade_vinculada_amazonia_azul',i)==='Sim'){a.valor_azul+=valor;a.beneficiarios_azul+=ben;a.contratos_azul+=cont;} if(Transforms.getVal(state,'sexo_padronizado',i)==='Mulheres'){a.valor_mulheres+=valor;a.beneficiarios_mulheres+=ben;a.contratos_mulheres+=cont;} }
+    const tips=[...new Set([...monthlyTip.keys()].map(k=>k.split('|')[1]))].sort(); const traces=tips.map(tip=>({name:tip,x:state.months.map(Utils.formatMonth),y:state.months.map(m=>Transforms.derived(monthlyTip.get(m+'|'+tip)||Utils.empty(), metric))}));
+    Charts.line('chart_evo_tipology', traces, 'Evolução por tipologia territorial', {tickformat:metric.includes('share')?'.0%':''});
+  }
+  function buildBenchmarkOptions(){
+    const opts=[['Brasil|Brasil','Brasil'],['Total dos municípios elegíveis|Municípios elegíveis','Total dos municípios elegíveis']];
+    ['Norte','Nordeste','Centro-Oeste','Sudeste','Sul'].forEach(v=>opts.push(['Macrorregião|'+v, 'Macrorregião: '+v]));
+    (state.cube.dicts.uf||[]).slice().sort().forEach(v=>opts.push(['UF|'+v, 'UF: '+v]));
+    (state.cube.dicts.tipologia_territorial_amazonia_azul||[]).filter(v=>v!=='Não elegível').sort().forEach(v=>opts.push(['Tipologia territorial Amazônia Azul|'+v, 'Tipologia: '+v]));
+    state.meta.municipios.filter(m=>m.elegivel_amazonia_azul==='Sim').slice(0,1500).forEach(m=>opts.push(['Município|'+m.cod_mun, 'Município: '+m.nome_mun+' ('+m.uf+')']));
+    for(const id of ['benchA','benchB']){ const el=document.getElementById(id); el.innerHTML=''; opts.forEach(([v,l])=>el.appendChild(option(l,v))); }
+    document.getElementById('benchB').value='Total dos municípios elegíveis|Municípios elegíveis';
+  }
+  function benchAgg(value){
+    const [typ,val]=value.split('|'); const {current}=windowInfo(); const base=currentFilters({}, {ignoreTerritory:true}); const extra={};
+    if(typ==='Total dos municípios elegíveis') extra.elegivel_amazonia_azul='Sim';
+    if(typ==='Macrorregião') extra.macrorregiao_geografica=val; if(typ==='UF') extra.uf=val; if(typ==='Tipologia territorial Amazônia Azul') extra.tipologia_territorial_amazonia_azul=val; if(typ==='Município') extra.cod_mun=val;
+    return agg({...base,...extra},current);
+  }
+  function renderBenchmark(){
+    const a=benchAgg(document.getElementById('benchA').value), b=benchAgg(document.getElementById('benchB').value);
+    const rows=[['Valor total','valor',Utils.formatBRLFull],['Valor Amazônia Azul','valor_azul',Utils.formatBRLFull],['Beneficiários totais','beneficiarios',Utils.formatNumber],['Beneficiários Amazônia Azul','beneficiarios_azul',Utils.formatNumber],['Contratos totais','contratos',Utils.formatNumber],['Contratos Amazônia Azul','contratos_azul',Utils.formatNumber],['Part. Amazônia Azul no valor','share_valor_azul',Utils.formatPercent],['Part. Amazônia Azul nos beneficiários','share_beneficiarios_azul',Utils.formatPercent],['Part. Amazônia Azul nos contratos','share_contratos_azul',Utils.formatPercent],['Part. feminina no valor','share_mulheres_valor',Utils.formatPercent],['Part. feminina nos beneficiários','share_mulheres_beneficiarios',Utils.formatPercent],['Part. feminina nos contratos','share_mulheres_contratos',Utils.formatPercent]];
+    const body=document.querySelector('#benchTable tbody'); body.innerHTML='';
+    rows.forEach(([label,key,fmt])=>{ const va=Transforms.derived(a,key), vb=Transforms.derived(b,key); const abs=(va??0)-(vb??0); const pp=key.includes('share')?abs:null; const rel=vb?abs/vb:null; const tr=document.createElement('tr'); tr.innerHTML=`<td>${label}</td><td>${fmt(va)}</td><td>${fmt(vb)}</td><td>${key.includes('share')?Utils.formatPP(abs):key.includes('valor')?Utils.formatBRLFull(abs):Utils.formatNumber(abs)}</td><td>${pp===null?'—':Utils.formatPP(pp)}</td><td>${Utils.formatPercent(rel)}</td>`; body.appendChild(tr); });
+    document.getElementById('benchCards').innerHTML=[Utils.makeCard('Valor total — território',Utils.formatBRL(a.valor),'Comparação selecionada'),Utils.makeCard('Valor total — benchmark',Utils.formatBRL(b.valor),'Base comparativa'),Utils.makeCard('Part. Amazônia Azul — território',Utils.formatPercent(Utils.pct(a.valor_azul,a.valor)),'No valor contratado'),Utils.makeCard('Part. feminina — território',Utils.formatPercent(Utils.pct(a.valor_mulheres,a.valor)),'No valor contratado')].join('');
+    Charts.groupedBar('chart_benchmark', ['Valor total','Valor Amazônia Azul','Contratos'], [{name:'Território',values:[a.valor,a.valor_azul,a.contratos],color:'#176b93'},{name:'Benchmark',values:[b.valor,b.valor_azul,b.contratos],color:'#16a6a3'}], 'Comparação sintética');
+  }
+  function renderIndicators(){ renderTipologyParticipation(); renderIncrease(); renderEvoTipology(); renderBenchmark(); }
+  async function renderMethodology(){
+    const el=document.getElementById('methodologyContent'); if(el.dataset.loaded) return;
+    const r=await fetch('metodologia/metodologia.md'); const md=await r.text(); el.innerHTML=marked.parse(md); el.dataset.loaded='1';
+  }
+  function renderActive(){
+    if(!state.cube) return;
+    if(state.activeTab==='overview') renderOverview();
+    if(state.activeTab==='detail') renderRankings();
+    if(state.activeTab==='indicators') renderIndicators();
+    if(state.activeTab==='maps') { MapController.render(state); state.mapLoaded=true; }
+    if(state.activeTab==='methodology') renderMethodology();
+  }
+  function initTabs(){ document.querySelectorAll('.tab').forEach(btn=>btn.addEventListener('click',()=>{ document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active')); document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active')); btn.classList.add('active'); document.getElementById(btn.dataset.tab).classList.add('active'); state.activeTab=btn.dataset.tab; renderActive(); })); }
+  async function init(){
+    try{
+      const loaded=await DataLoader.loadAll(); state.cube=loaded.cube; state.meta=loaded.meta; state.bench=loaded.bench;
+      state.meta.municipios.forEach(m=>state.munLabel.set(m.cod_mun, `${m.nome_mun} (${m.uf})`));
+      document.getElementById('source-period').textContent = `${Utils.formatMonth(state.meta.source_summary.mes_inicial)} – ${Utils.formatMonth(state.meta.source_summary.mes_final)}`;
+      document.getElementById('source-summary').textContent = `${Utils.formatNumber(state.meta.source_summary.linhas_base_financiamento)} linhas brutas processadas; ${Utils.formatNumber(state.cube.meta.rows_aggregated)} agregações públicas.`;
+      initFilters(); initTabs(); renderOverview();
+    }catch(e){ console.error(e); document.querySelector('.content').innerHTML=`<article class="panel"><h2>Erro ao carregar dashboard</h2><p>${e.message}</p></article>`; }
+  }
+  return {init, state};
 })();
+window.addEventListener('DOMContentLoaded', App.init);

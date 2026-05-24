@@ -1,195 +1,90 @@
-(function () {
-  const ROOT = window.Amazul = window.Amazul || {};
-  const U = () => ROOT.utils;
-  const T = () => ROOT.transforms;
-
-  let map = null;
-  let geoLayer = null;
-  let geojsonCache = null;
-
-  async function initMap(manifest) {
-    if (!map) {
-      map = L.map('municipalMap', { zoomControl: true, preferCanvas: true }).setView([-14.2, -51.9], 4);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 18,
-        attribution: '&copy; OpenStreetMap contributors'
-      }).addTo(map);
+const MapController = (() => {
+  let map, muniLayer, ufLayer, legend;
+  const seq = ['#d7eff9','#9dd5ea','#4fa4ca','#176b93'];
+  const neg = ['#fee2c5','#f59e0b','#dc6b19','#b91c1c'];
+  function codeFromProps(props){
+    const c = props?.codarea || props?.CD_MUN || props?.CD_GEOCMU || props?.code_muni || props?.id || props?.geocodigo || props?.codigo_ibge || props?.CD_MUNICIP;
+    return c ? String(c).replace(/\D/g,'').padStart(7,'0') : '';
+  }
+  function ufCodeFromProps(props){ return props?.SIGLA_UF || props?.sigla || props?.UF || props?.NM_UF || ''; }
+  async function loadGeoJSON(kind){
+    const manifest = await DataLoader.getJSON('data/geo/manifest_malhas.json');
+    const local = kind==='municipios' ? 'data/geo/municipios_ibge_topo.json' : 'data/geo/ufs_ibge_topo.json';
+    try{
+      const topo = await DataLoader.getJSON(local);
+      const objectName = Object.keys(topo.objects)[0];
+      return topojson.feature(topo, topo.objects[objectName]);
+    }catch(e){
+      const remote = manifest.maps.remote_fallback[kind];
+      return DataLoader.getJSON(remote);
     }
-    if (!geojsonCache) geojsonCache = await loadGeojson(manifest);
-    setTimeout(() => map.invalidateSize(), 200);
-    return geojsonCache;
   }
-
-  async function loadGeojson(manifest) {
-    const status = document.getElementById('mapStatus');
-    const src = manifest.geojson;
-    if (!src) throw new Error('GeoJSON não informado no manifest.json.');
-    if (status) status.textContent = `Carregando geografia municipal local: ${src}`;
-    const res = await fetch(src);
-    if (!res.ok) throw new Error(`Não foi possível carregar ${src}: ${res.status}`);
-    const json = await res.json();
-    if (!json.features || !json.features.length) throw new Error('GeoJSON sem feições.');
-    if (status) {
-      status.classList.remove('error');
-      const geomType = json.features[0]?.geometry?.type || 'geometria';
-      status.textContent = `Geografia local carregada com ${json.features.length.toLocaleString('pt-BR')} feições municipais (${geomType}).`;
+  function init(){
+    if(map) return;
+    map = L.map('map', {preferCanvas:true, zoomControl:true}).setView([-14.2,-51.9],4);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:10, attribution:'&copy; OpenStreetMap'}).addTo(map);
+    legend = L.control({position:'bottomright'}); legend.onAdd = () => { const div=L.DomUtil.create('div','legend'); div.innerHTML='Carregando legenda...'; return div; }; legend.addTo(map);
+  }
+  function computeMapData(state){
+    const ref=document.getElementById('f_mes').value; const n=Number(document.getElementById('f_janela').value||1); const {current,previous,previousComplete}=Transforms.getWindowMonths(state.months, ref, n);
+    const filters=Transforms.getActiveFilters(state); const cur=Transforms.aggregateBy(state, Transforms.indices(state,filters,current), 'cod_mun');
+    const prev=Transforms.aggregateBy(state, Transforms.indices(state,filters,previous), 'cod_mun');
+    const metric=document.getElementById('mapIndicator').value; const data=new Map();
+    for(const m of state.meta.municipios){
+      const a=cur.get(m.cod_mun)||Utils.empty(); const b=prev.get(m.cod_mun)||Utils.empty(); let val=null;
+      if(metric.startsWith('var_')){ val=previousComplete ? (Transforms.derived(a, metric.replace('var_','')) - Transforms.derived(b, metric.replace('var_',''))) : null; }
+      else if(metric.startsWith('growth_')){ const base=Transforms.derived(b, metric.replace('growth_','')); val=(previousComplete && base) ? ((Transforms.derived(a, metric.replace('growth_',''))-base)/base) : null; }
+      else { val=Transforms.derived(a, metric); }
+      data.set(m.cod_mun, {value:val, current:a, previous:b, meta:m});
     }
-    return json;
+    return {data, metric, previousComplete};
   }
-
-  function normalizeFeatureCode(feature) {
-    const p = feature.properties || {};
-    const candidates = [feature.id, p.id, p.CD_MUN, p.CD_MUN7, p.CD_GEOCMU, p.codarea, p.geocodigo, p.codigo_ibge, p.COD_MUN, p.CODMUN, p.IBGE, p.CD_IBGE];
-    for (const c of candidates) {
-      const code = U().padMunicipioCode(c);
-      if (code) return code;
-    }
-    return '';
+  function quantiles(values){
+    const v=values.filter(x=>x!==null && x!==undefined && !Number.isNaN(x)).sort((a,b)=>a-b);
+    if(!v.length) return [];
+    function q(p){ const pos=(v.length-1)*p, lo=Math.floor(pos), hi=Math.ceil(pos); return lo===hi?v[lo]:v[lo]+(v[hi]-v[lo])*(pos-lo); }
+    return [q(.25),q(.5),q(.75)];
   }
-
-  function drawMunicipalMap(rows, allNoTimeRows, refPeriod, metric, mode, growthWindow, manifest) {
-    initMap(manifest).then(geojson => {
-      const currentAgg = T().aggregateMunicipios(rows);
-      const currentMap = new Map(currentAgg.map(d => [d.codMun, d]));
-      const totalSummary = T().summarize(rows);
-      let valueMap = new Map();
-      let values = [];
-      if (mode === 'growth') {
-        const curr = T().aggregateMunicipios(T().applyTimeWindow(allNoTimeRows, refPeriod, Number(growthWindow)));
-        const prev = T().aggregateMunicipios(T().applyPreviousTimeWindow(allNoTimeRows, refPeriod, Number(growthWindow)));
-        const prevMap = new Map(prev.map(d => [d.codMun, d]));
-        curr.forEach(d => {
-          const val = T().growth(d, prevMap.get(d.codMun) || {}, metric);
-          valueMap.set(d.codMun, val);
-          if (val !== null) values.push(val);
-        });
-      } else {
-        currentAgg.forEach(d => {
-          let val = T().getMetric(d, metric);
-          if (mode === 'shareMunicipio') val = U().safeDivide(T().getMetric(d, metric), T().getMetric(totalSummary, metric));
-          if (mode === 'shareAzul') val = metric === 'valor' ? d.shareAzulValor : metric === 'beneficiarios' ? d.shareAzulBeneficiarios : d.shareAzulContratos;
-          if (mode === 'shareMulheres') val = metric === 'valor' ? d.shareMulheresValor : metric === 'beneficiarios' ? d.shareMulheresBeneficiarios : d.shareMulheresContratos;
-          valueMap.set(d.codMun, val);
-          if (val !== null && Number.isFinite(Number(val))) values.push(Number(val));
-        });
-      }
-
-      const breaks = mode === 'growth' ? [] : U().quantiles(values.filter(v => v > 0), 4);
-      const maxAbs = Math.max(...values.map(v => Math.abs(Number(v) || 0)), 0);
-      if (geoLayer) geoLayer.remove();
-      geoLayer = L.geoJSON(geojson, {
-        filter: feature => currentMap.has(normalizeFeatureCode(feature)),
-        pointToLayer: (feature, latlng) => {
-          const code = normalizeFeatureCode(feature);
-          const val = valueMap.get(code);
-          const radius = pointRadius(val, maxAbs, mode);
-          return L.circleMarker(latlng, {
-            radius,
-            color: '#ffffff',
-            weight: 0.9,
-            opacity: 1,
-            fillColor: getColor(val, breaks, mode),
-            fillOpacity: val === null || val === undefined ? 0.35 : 0.82
-          });
-        },
-        style: feature => {
-          const code = normalizeFeatureCode(feature);
-          const val = valueMap.get(code);
-          return {
-            color: '#ffffff',
-            weight: 0.55,
-            opacity: 1,
-            fillColor: getColor(val, breaks, mode),
-            fillOpacity: val === null || val === undefined ? 0.18 : 0.78
-          };
-        },
-        onEachFeature: (feature, layer) => {
-          const code = normalizeFeatureCode(feature);
-          const d = currentMap.get(code);
-          if (!d) return;
-          const val = valueMap.get(code);
-          const valueFormatted = formatMapValue(val, metric, mode);
-          layer.bindTooltip(`${d.municipio} (${d.uf})<br>${valueFormatted}`, { sticky: true });
-          layer.bindPopup(`
-            <strong>${d.municipio} (${d.uf})</strong><br>
-            Macrorregião: ${d.macro}<br>
-            Tipologia territorial: ${d.tipologiaTerritorial}<br>
-            Valor contratado: ${U().formatBRLFull(d.valor)}<br>
-            Beneficiários: ${U().formatNumber(d.beneficiarios)}<br>
-            Contratos: ${U().formatNumber(d.contratos)}<br>
-            Part. Amazônia Azul: ${U().formatPercent(d.shareAzulValor)}<br>
-            Part. feminina: ${U().formatPercent(d.shareMulheresValor)}<br>
-            Indicador do mapa: ${valueFormatted}
-          `);
-        }
-      }).addTo(map);
-      try {
-        const bounds = geoLayer.getBounds();
-        if (bounds.isValid()) map.fitBounds(bounds.pad(0.08));
-      } catch (_) {}
-      renderLegend(breaks, mode, metric, values, geojson.features[0]?.geometry?.type);
-    }).catch((err) => {
-      console.error(err);
-      const status = document.getElementById('mapStatus');
-      if (status) {
-        status.classList.add('error');
-        status.textContent = 'Mapa indisponível. Verifique se data/geo/municipios_amazonia_azul.geojson está no repositório.';
-      }
-    });
+  function classify(metric, data){
+    const vals=[]; data.forEach(d=>{ if(d.meta.elegivel_amazonia_azul==='Sim' && d.value!==null && d.value!==undefined && !Number.isNaN(d.value)) vals.push(d.value); });
+    const variation = metric.startsWith('var_') || metric.startsWith('growth_');
+    if(!variation){ const qs=quantiles(vals); return {variation:false, qs}; }
+    const pos=vals.filter(v=>v>0), negv=vals.filter(v=>v<0).map(v=>Math.abs(v));
+    return {variation:true, pos:quantiles(pos), neg:quantiles(negv)};
   }
-
-  function pointRadius(val, maxAbs, mode) {
-    if (val === null || val === undefined || !Number.isFinite(Number(val))) return 4;
-    if (!maxAbs) return 7;
-    const v = Math.abs(Number(val));
-    const scaled = Math.sqrt(v / maxAbs);
-    return Math.max(4, Math.min(18, 4 + scaled * 14));
+  function colorFor(d, cls){
+    if(!d) return '#eef2f4';
+    if(d.meta.elegivel_amazonia_azul!=='Sim') return '#f1f3f4';
+    const v=d.value;
+    if(v===null||v===undefined||Number.isNaN(v)) return '#e5e7eb';
+    if(!cls.variation){ const q=cls.qs; if(!q.length) return seq[1]; return v<=q[0]?seq[0]:v<=q[1]?seq[1]:v<=q[2]?seq[2]:seq[3]; }
+    if(v===0) return '#cbd5e1';
+    if(v>0){ const q=cls.pos; if(!q.length) return seq[1]; return v<=q[0]?seq[0]:v<=q[1]?seq[1]:v<=q[2]?seq[2]:seq[3]; }
+    const a=Math.abs(v), q=cls.neg; if(!q.length) return neg[1]; return a<=q[0]?neg[0]:a<=q[1]?neg[1]:a<=q[2]?neg[2]:neg[3];
   }
-
-  function getColor(val, breaks, mode) {
-    if (val === null || val === undefined || !Number.isFinite(Number(val))) return '#d7dde2';
-    const v = Number(val);
-    if (mode === 'growth') {
-      if (v < -0.25) return '#b33c2e';
-      if (v < -0.05) return '#e08b4f';
-      if (v <= 0.05) return '#e5e9ed';
-      if (v <= 0.25) return '#5ca6d1';
-      return '#0e5f8f';
-    }
-    const idx = U().bucketByBreaks(v, breaks);
-    return ['#dceef8', '#9fd0e9', '#5aa9d6', '#1f78ad', '#084b73'][idx + (breaks.length === 0 ? 1 : 0)] || '#084b73';
+  function classLabel(d, cls){
+    if(!d) return 'Sem dado'; if(d.meta.elegivel_amazonia_azul!=='Sim') return 'Não elegível';
+    const v=d.value; if(v===null||v===undefined||Number.isNaN(v)) return 'Sem dado'; if(!cls.variation) return 'Quartil da distribuição'; if(v===0) return 'Estável'; return v>0?'Crescimento':'Queda';
   }
-
-  function formatMapValue(val, metric, mode) {
-    if (val === null || val === undefined || !Number.isFinite(Number(val))) return 'N.D.';
-    if (mode === 'shareMunicipio' || mode === 'shareAzul' || mode === 'shareMulheres' || mode === 'growth') return U().formatPercent(val);
-    if (metric === 'valor') return U().formatBRLFull(val);
-    return U().formatNumber(val);
+  function updateLegend(cls){
+    const div=document.querySelector('.legend'); if(!div) return;
+    if(!cls.variation){ div.innerHTML = `<strong>Quartis</strong><br>${seq.map((c,i)=>`<i style="background:${c}"></i>Q${i+1}`).join('<br>')}<br><i style="background:#f1f3f4"></i>Não elegível<br><i style="background:#e5e7eb"></i>Sem dado`; }
+    else { div.innerHTML = `<strong>Variação</strong><br><i style="background:${neg[3]}"></i>Queda forte<br><i style="background:${neg[1]}"></i>Queda baixa/moderada<br><i style="background:#cbd5e1"></i>Estável<br><i style="background:${seq[1]}"></i>Crescimento baixo/moderado<br><i style="background:${seq[3]}"></i>Crescimento forte<br><i style="background:#e5e7eb"></i>Sem dado`; }
   }
-
-  function renderLegend(breaks, mode, metric, values, geomType) {
-    const legend = document.getElementById('mapLegend');
-    if (!legend) return;
-    const geomNote = geomType === 'Point' ? '<span class="legend-note">Círculos representam centroides municipais.</span>' : '';
-    if (mode === 'growth') {
-      const labels = [
-        ['#b33c2e', 'Queda forte'], ['#e08b4f', 'Queda moderada'], ['#e5e9ed', 'Estabilidade'], ['#5ca6d1', 'Crescimento moderado'], ['#0e5f8f', 'Crescimento forte']
-      ];
-      legend.innerHTML = labels.map(([c, t]) => `<span class="legend-item"><span class="legend-swatch" style="background:${c}"></span>${t}</span>`).join('') + geomNote;
-      return;
-    }
-    const colors = ['#dceef8', '#9fd0e9', '#5aa9d6', '#1f78ad', '#084b73'];
-    const sorted = values.filter(v => Number.isFinite(v)).sort((a, b) => a - b);
-    if (!sorted.length) {
-      legend.innerHTML = '<span class="legend-item"><span class="legend-swatch" style="background:#d7dde2"></span>Sem dados</span>' + geomNote;
-      return;
-    }
-    const ranges = [];
-    let lower = sorted[0];
-    breaks.forEach(b => { ranges.push([lower, b]); lower = b; });
-    ranges.push([lower, sorted[sorted.length - 1]]);
-    legend.innerHTML = ranges.map((r, i) => `<span class="legend-item"><span class="legend-swatch" style="background:${colors[i]}"></span>${formatMapValue(r[0], metric, mode)}–${formatMapValue(r[1], metric, mode)}</span>`).join('') + '<span class="legend-item"><span class="legend-swatch" style="background:#d7dde2"></span>Sem dado</span>' + geomNote;
+  async function render(state){
+    init(); document.getElementById('mapStatus').textContent='Carregando malhas municipais...';
+    const [{data, metric, previousComplete}, muniGeo, ufGeo] = await Promise.all([Promise.resolve(computeMapData(state)), loadGeoJSON('municipios'), loadGeoJSON('ufs')]);
+    const cls=classify(metric, data); updateLegend(cls);
+    if(muniLayer) muniLayer.remove(); if(ufLayer) ufLayer.remove();
+    muniLayer = L.geoJSON(muniGeo, {style: feature => { const d=data.get(codeFromProps(feature.properties)); return {color:'#9aa7b0',weight:.35,fillColor:colorFor(d,cls),fillOpacity:.86}; }, onEachFeature: (feature, layer)=>{
+      const cod=codeFromProps(feature.properties), d=data.get(cod), m=d?.meta || {}; const a=d?.current || Utils.empty();
+      const v=d?.value; const valtxt = metric.includes('share')||metric.includes('growth') ? Utils.formatPercent(v) : metric.includes('valor') ? Utils.formatBRLFull(v) : Utils.formatNumber(v);
+      layer.bindTooltip(`<strong>${m.nome_mun||feature.properties?.nome||'Município'}</strong><br>UF: ${m.uf||''}<br>Macrorregião: ${m.macrorregiao_geografica||''}<br>Tipologia territorial: ${m.tipologia_territorial_amazonia_azul||'—'}<br>Elegível ao Programa: ${m.elegivel_amazonia_azul||'—'}<br>Valor contratado: ${Utils.formatBRLFull(a.valor)}<br>Beneficiários: ${Utils.formatNumber(a.beneficiarios)}<br>Contratos: ${Utils.formatNumber(a.contratos)}<br>Participação Amazônia Azul: ${Utils.formatPercent(Utils.pct(a.valor_azul,a.valor))}<br>Participação feminina: ${Utils.formatPercent(Utils.pct(a.valor_mulheres,a.valor))}<br>Indicador do mapa: ${valtxt}<br>Classe: ${classLabel(d,cls)}`);
+    }}).addTo(map);
+    ufLayer = L.geoJSON(ufGeo, {style:{color:'#1f2937',weight:1.2,fillOpacity:0,interactive:false}}).addTo(map);
+    try{ map.fitBounds(muniLayer.getBounds(), {padding:[8,8]}); }catch(e){}
+    document.getElementById('mapStatus').textContent = previousComplete || !(metric.startsWith('var_')||metric.startsWith('growth_')) ? 'Mapa carregado.' : 'Mapa carregado; variações dependem de janela anterior completa e podem aparecer como sem dado.';
   }
-
-  ROOT.maps = { drawMunicipalMap, initMap };
+  function reset(){ if(map && muniLayer) map.fitBounds(muniLayer.getBounds(), {padding:[8,8]}); }
+  return {render, reset};
 })();
