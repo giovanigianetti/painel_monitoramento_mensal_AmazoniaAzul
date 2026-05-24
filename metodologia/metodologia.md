@@ -2,21 +2,7 @@
 
 ## Objetivo
 
-O dashboard monitora a execução mensal de financiamentos associados ao Programa Amazônia Azul, com foco em valor contratado, beneficiários, contratos, participação de atividades vinculadas à Amazônia Azul, participação dos municípios elegíveis no total da base e participação feminina.
-
-## Fontes de dados
-
-A base de financiamento usada no pré-processamento é `FNE_AnexoI_Contratações_032026.xlsx`, aba `Dados_Anexo-I`. A classificação territorial é proveniente de `Tipologia Amazônia Azul (v5).xlsx`, aba `Base de dados`.
-
-As bases brutas são usadas apenas localmente. O repositório público contém somente JSONs agregados e compactos, sem Excel, CSV ou registros individuais.
-
-## Estrutura dos arquivos dos fundos
-
-O script aceita a estrutura do Anexo I, com colunas de UF, município, data da contratação, CNAE, setor, programa, atividade, porte, finalidade, valor contratado, beneficiários, contratos, instituição operadora e sexo. Novos fundos podem ser empilhados desde que preservem essa estrutura e recebam identificador de origem.
-
-## Elegibilidade territorial
-
-A lista de municípios do arquivo de tipologia define os municípios elegíveis ao Programa Amazônia Azul. A coluna `Tipologia Amazônia Azul` desse arquivo é tratada como **Tipologia territorial Amazônia Azul**, com classes como Alta-Alta, Alta-Média, Alta-Baixa, Média-Alta, Média-Média, Média-Baixa e Baixa.
+O dashboard monitora a execução mensal de financiamentos associados ao Programa Amazônia Azul, com foco em valor contratado, beneficiários, contratos, participação de territórios e atividades vinculadas à Amazônia Azul.
 
 ## Atividade vinculada e tipologia territorial
 
@@ -94,15 +80,9 @@ Os mapas usam limites administrativos municipais. Os níveis absolutos e partici
 
 Para mapas de variação, os valores positivos e negativos são classificados separadamente. Crescimentos usam escala azul; quedas usam escala laranja/vermelha; estabilidade é cinza; ausência de dado é cinza claro.
 
+Os mapas coropléticos usam classes por percentis entre os municípios elegíveis com dado válido. Quando o indicador apresenta valores positivos e negativos, os percentis são calculados separadamente para crescimentos e quedas, com estabilidade e ausência de dados em classes próprias.
+
+
 ## Limitações de interpretação
 
 Os indicadores refletem a execução registrada na base enviada e não representam avaliação causal de impacto. A existência de contratação em um município ou atividade não implica, isoladamente, efetividade econômica, adicionalidade, geração líquida de emprego ou alteração estrutural no território. Comparações de participação devem ser interpretadas com atenção à composição dos filtros, à sazonalidade e à disponibilidade de série histórica.
-
-
-## Leitura dos modos percentuais
-
-Nas visualizações de evolução temporal e comparação territorial, o modo **Percentual da janela** representa a taxa de variação do indicador em relação à janela imediatamente anterior de mesmo tamanho. A janela é definida pelo seletor global: mês, trimestre, semestre ou últimos 12 meses.
-
-## Escalas dos mapas
-
-Os mapas coropléticos usam classes por percentis entre os municípios elegíveis com dado válido. Quando o indicador apresenta valores positivos e negativos, os percentis são calculados separadamente para crescimentos e quedas, com estabilidade e ausência de dados em classes próprias.
