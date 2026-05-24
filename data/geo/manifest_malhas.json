@@ -3,12 +3,18 @@
   "maps": {
     "local_topojson_supported": [
       "data/geo/municipios_ibge_topo.json",
-      "data/geo/ufs_ibge_topo.json"
+      "data/geo/ufs_ibge_topo.json",
+      "maps/municipios_ibge_topo.json",
+      "maps/ufs_ibge_topo.json"
     ],
+    "pndr4_sources": {
+      "municipios": "https://raw.githubusercontent.com/giovanigianetti/PNDR_4/main/maps/municipios_ibge_topo.json",
+      "ufs": "https://raw.githubusercontent.com/giovanigianetti/PNDR_4/main/maps/ufs_ibge_topo.json"
+    },
     "remote_fallback": {
-      "municipios": "https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?intrarregiao=municipio&qualidade=minima&formato=application/json",
-      "ufs": "https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?intrarregiao=UF&qualidade=minima&formato=application/json"
+      "municipios": "https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?formato=application%2Fjson&intrarregiao=municipio&qualidade=minima",
+      "ufs": "https://servicodados.ibge.gov.br/api/v3/malhas/paises/BR?formato=application%2Fjson&intrarregiao=UF&qualidade=minima"
     }
   },
-  "notes": "O dashboard tenta carregar TopoJSON local. Se ausente, usa as malhas simplificadas oficiais do IBGE via API. Para funcionamento 100% offline, copie os arquivos municipios_ibge_topo.json e ufs_ibge_topo.json para esta pasta."
+  "notes": "O dashboard tenta carregar TopoJSON local, depois as malhas públicas do repositório PNDR_4 e, por fim, a API pública do IBGE. As classes do mapa são baseadas em percentis; quando há valores positivos e negativos, os percentis são calculados separadamente."
 }

@@ -1,4 +1,4 @@
-# Metodologia
+# Instruções e métodos
 
 ## Objetivo
 
@@ -74,13 +74,13 @@ A variação é calculada contra a janela imediatamente anterior de mesmo tamanh
 - Crescimento percentual: variação absoluta dividida pelo indicador da janela anterior.
 - Variação em pontos percentuais: participação atual menos participação anterior.
 
-## Rankings Top 10 e Bottom 10
+## Ranking Top 10
 
-Os rankings são calculados por dimensão selecionada e indicador selecionado, respeitando os filtros globais. Categorias sem informação suficiente, denominadores nulos ou valores nulos são removidos quando prejudicam a interpretação do Bottom 10.
+O ranking visual apresenta apenas o Top 10 para a dimensão e o indicador selecionados, respeitando os filtros globais. Categorias sem informação suficiente, denominadores nulos ou valores nulos são removidos para preservar a leitura executiva.
 
 ## Indicadores chave
 
-A aba de indicadores chave reúne: participação por tipologia territorial, contagem de territórios com aumento absoluto, contagem de territórios com aumento de participação relativa, evolução mensal por tipologia territorial e benchmarking territorial.
+A aba de indicadores chave reúne os totais de valor contratado, contratos e beneficiários, com barras empilhadas que separam a parcela vinculada e a parcela não vinculada à Amazônia Azul. A participação da Amazônia Azul é calculada como razão entre a parcela vinculada e o total da seleção filtrada para cada indicador. A aba também mantém a participação por tipologia territorial e o benchmarking territorial sintético.
 
 ## Benchmarking territorial
 
@@ -97,3 +97,12 @@ Para mapas de variação, os valores positivos e negativos são classificados se
 ## Limitações de interpretação
 
 Os indicadores refletem a execução registrada na base enviada e não representam avaliação causal de impacto. A existência de contratação em um município ou atividade não implica, isoladamente, efetividade econômica, adicionalidade, geração líquida de emprego ou alteração estrutural no território. Comparações de participação devem ser interpretadas com atenção à composição dos filtros, à sazonalidade e à disponibilidade de série histórica.
+
+
+## Leitura dos modos percentuais
+
+Nas visualizações de evolução temporal e comparação territorial, o modo **Percentual da janela** representa a taxa de variação do indicador em relação à janela imediatamente anterior de mesmo tamanho. A janela é definida pelo seletor global: mês, trimestre, semestre ou últimos 12 meses.
+
+## Escalas dos mapas
+
+Os mapas coropléticos usam classes por percentis entre os municípios elegíveis com dado válido. Quando o indicador apresenta valores positivos e negativos, os percentis são calculados separadamente para crescimentos e quedas, com estabilidade e ausência de dados em classes próprias.
